@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
 import { Command } from "commander";
+import * as p from "@clack/prompts";
+import { basename } from "path";
 import { runStatus, formatStatus } from "./commands/status";
 import { runLoadContext } from "./commands/load-context";
 import { runSaveSession } from "./commands/save-session";
@@ -25,29 +27,88 @@ program
   .action(async (opts) => {
     try {
       const cwd = process.cwd();
+      const detected = await detectAgents(cwd);
 
-      // If no options provided, detect agents and report
+      // Interactive mode when vault or project not provided
+      let interactive = false;
       if (!opts.vault || !opts.project) {
-        const detected = await detectAgents(cwd);
-        console.log("Detected agents:");
-        for (const a of detected) {
-          console.log(`  ${a.detected ? "[x]" : "[ ]"} ${a.label} (${a.indicator})`);
+        interactive = true;
+        p.intro("obsidian-memory setup");
+
+        const detectedNames = detected
+          .filter((a) => a.detected)
+          .map((a) => a.label)
+          .join(", ");
+        if (detectedNames) {
+          p.note(`Detected agents: ${detectedNames}`);
         }
-        console.log("\nUsage: obsidian-memory init --vault <name> --project <name> [--agents claude-code cursor ...]");
-        return;
+
+        const answers = await p.group(
+          {
+            vault: () =>
+              p.text({
+                message: "Obsidian vault name",
+                placeholder: "ObsidianMemory",
+                defaultValue: "ObsidianMemory",
+                validate: (v) => (!v ? "Vault name is required" : undefined),
+              }),
+            project: () =>
+              p.text({
+                message: "Project name",
+                placeholder: basename(cwd),
+                defaultValue: basename(cwd),
+                validate: (v) => (!v ? "Project name is required" : undefined),
+              }),
+            vaultPath: () =>
+              p.text({
+                message: "Vault filesystem path (for creating folder structure)",
+                placeholder: `~/ObsidianMemory`,
+                defaultValue: "",
+              }),
+            agents: () =>
+              p.multiselect({
+                message: "Which agents should be configured?",
+                options: detected.map((a) => ({
+                  value: a.id,
+                  label: a.label,
+                  hint: a.detected ? "detected" : undefined,
+                })),
+                initialValues: detected.filter((a) => a.detected).map((a) => a.id),
+                required: true,
+              }),
+          },
+          {
+            onCancel: () => {
+              p.cancel("Setup cancelled.");
+              process.exit(0);
+            },
+          }
+        );
+
+        opts.vault = answers.vault;
+        opts.project = answers.project;
+        opts.vaultPath = answers.vaultPath || undefined;
+        opts.agents = answers.agents;
       }
 
-      const agents: AgentId[] = opts.agents || (await detectAgents(cwd))
+      const agents: AgentId[] = opts.agents || detected
         .filter((a) => a.detected)
         .map((a) => a.id);
+
+      // Resolve ~ in vault path
+      const vaultPath = opts.vaultPath?.replace(/^~/, process.env.HOME || "~");
 
       const result = await runInit(cwd, {
         vault: opts.vault,
         project: opts.project,
         agents,
-        vaultPath: opts.vaultPath,
+        vaultPath,
       });
+
       console.log(formatInitResult(result));
+      if (interactive) {
+        p.outro("Done! Open the vault in Obsidian and start coding.");
+      }
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);

@@ -73,6 +73,7 @@ export async function runInit(
     vault: options.vault,
     project: options.project,
     agents: options.agents,
+    ...(options.vaultPath ? { vaultPath: options.vaultPath } : {}),
   });
   result.configWritten = true;
 

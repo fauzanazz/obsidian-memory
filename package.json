@@ -30,6 +30,7 @@
     "url": "https://github.com/enjat/obsidian-memory"
   },
   "dependencies": {
+    "@clack/prompts": "^1.1.0",
     "commander": "^13.0.0"
   },
   "devDependencies": {
@@ -39,5 +40,6 @@
   "engines": {
     "bun": ">=1.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "enjat"
 }
