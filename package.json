@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --outdir dist --target bun --minify && chmod +x dist/index.js",
     "prepublishOnly": "bun run build"
   },
@@ -36,11 +37,17 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "lefthook": "^2.1.4",
     "typescript": "^5.7.0"
   },
   "engines": {
     "bun": ">=1.0.0"
   },
   "license": "MIT",
-  "author": "enjat"
+  "author": "enjat",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "lefthook"
+    ]
+  }
 }

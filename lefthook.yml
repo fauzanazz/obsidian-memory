@@ -1,0 +1,5 @@
+pre-commit:
+  commands:
+    typecheck:
+      run: bun run typecheck
+      glob: "**/*.ts"

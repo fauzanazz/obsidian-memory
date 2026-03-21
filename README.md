@@ -10,6 +10,18 @@ Start work in Claude Code, switch to Cursor, continue in Antigravity — your AI
 - [Obsidian](https://obsidian.md) v1.12.4+ with CLI enabled (Settings → General → CLI → Register)
 - Optional: [obsidian-hybrid-search](https://github.com/flowing-abyss/obsidian-hybrid-search) for semantic search
 
+## Installation
+
+```bash
+bunx obsidian-memory init
+```
+
+Or install globally:
+
+```bash
+bun add -g obsidian-memory
+```
+
 ## Quick Start
 
 ```bash
