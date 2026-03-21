@@ -153,6 +153,18 @@ All notes use Obsidian-native markdown with YAML frontmatter, wikilinks, and tag
 
 No MCP server, no custom embedding engine. Agents use shell commands directly.
 
+## Claude Code Skill
+
+A Claude Code [skill](https://docs.anthropic.com/en/docs/claude-code/skills) is included for agents that want the obsidian-memory protocol available without reading `AGENTS.md` each session.
+
+**Install:**
+
+```bash
+cp -r skills/obsidian-memory ~/.claude/skills/obsidian-memory
+```
+
+Once installed, Claude Code automatically triggers the skill when it detects `.obsidian-memory.json` or when you mention session memory, loading context, saving sessions, or searching past decisions.
+
 ## Troubleshooting
 
 **"Obsidian is not running"** — Start the Obsidian desktop app. The CLI requires it.
