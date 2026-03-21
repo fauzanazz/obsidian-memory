@@ -1,0 +1,25 @@
+{
+  "name": "obsidian-memory",
+  "version": "0.1.0",
+  "description": "Universal memory layer for AI coding agents, powered by Obsidian",
+  "type": "module",
+  "bin": {
+    "obsidian-memory": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "test": "bun test",
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "license": "MIT"
+}

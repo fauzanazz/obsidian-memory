@@ -1,0 +1,174 @@
+export interface FileTarget {
+  file?: string;
+  path?: string;
+}
+
+export interface CreateOptions {
+  name: string;
+  content: string;
+  template?: string;
+  silent?: boolean;
+  overwrite?: boolean;
+}
+
+export interface SearchOptions {
+  path?: string;
+  limit?: number;
+}
+
+export interface SearchResult {
+  path: string;
+  matches: string[];
+}
+
+export interface SetPropertyOptions extends FileTarget {
+  name: string;
+  value: string;
+  type?: string;
+}
+
+export interface AvailabilityResult {
+  obsidianRunning: boolean;
+  cliAvailable: boolean;
+  version?: string;
+}
+
+export class ObsidianCLI {
+  readonly vault: string;
+
+  constructor(vault: string) {
+    this.vault = vault;
+  }
+
+  async exec(args: string[]): Promise<string> {
+    const cmd = ["obsidian", `vault=${this.vault}`, ...args];
+    const proc = Bun.spawn(cmd, {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const exitCode = await proc.exited;
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+
+    if (exitCode !== 0) {
+      throw new Error(stderr.trim() || `obsidian CLI exited with code ${exitCode}`);
+    }
+
+    return stdout.trim();
+  }
+
+  async read(target: FileTarget): Promise<string> {
+    const args = ["read", ...this.buildTargetArgs(target)];
+    return this.exec(args);
+  }
+
+  async create(options: CreateOptions): Promise<string> {
+    const args = ["create", `name="${options.name}"`, `content="${options.content}"`];
+    if (options.template) args.push(`template="${options.template}"`);
+    if (options.silent) args.push("silent");
+    if (options.overwrite) args.push("overwrite");
+    return this.exec(args);
+  }
+
+  async append(options: FileTarget & { content: string }): Promise<string> {
+    const args = ["append", ...this.buildTargetArgs(options), `content="${options.content}"`];
+    return this.exec(args);
+  }
+
+  async prepend(options: FileTarget & { content: string }): Promise<string> {
+    const args = ["prepend", ...this.buildTargetArgs(options), `content="${options.content}"`];
+    return this.exec(args);
+  }
+
+  async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
+    const args = ["search", `query="${query}"`, "format=json"];
+    if (options?.path) args.push(`path="${options.path}"`);
+    if (options?.limit) args.push(`limit=${options.limit}`);
+    const output = await this.exec(args);
+    return JSON.parse(output || "[]");
+  }
+
+  async getProperties(target: FileTarget): Promise<Record<string, string>> {
+    const args = ["properties", ...this.buildTargetArgs(target)];
+    const output = await this.exec(args);
+    return this.parseYamlProperties(output);
+  }
+
+  async setProperty(options: SetPropertyOptions): Promise<void> {
+    const args = [
+      "property:set",
+      ...this.buildTargetArgs(options),
+      `name="${options.name}"`,
+      `value="${options.value}"`,
+    ];
+    if (options.type) args.push(`type="${options.type}"`);
+    await this.exec(args);
+  }
+
+  async getFilesWithTag(tag: string): Promise<string[]> {
+    const args = ["tag", `tag="${tag}"`, "format=json"];
+    const output = await this.exec(args);
+    return JSON.parse(output || "[]");
+  }
+
+  async getBacklinks(target: FileTarget): Promise<string[]> {
+    const args = ["backlinks", ...this.buildTargetArgs(target), "format=json"];
+    const output = await this.exec(args);
+    return JSON.parse(output || "[]");
+  }
+
+  async checkAvailability(): Promise<AvailabilityResult> {
+    const result: AvailabilityResult = {
+      obsidianRunning: false,
+      cliAvailable: false,
+    };
+
+    // Check if Obsidian process is running
+    try {
+      const pgrep = Bun.spawn(["pgrep", "-x", "Obsidian"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const exitCode = await pgrep.exited;
+      result.obsidianRunning = exitCode === 0;
+    } catch {
+      result.obsidianRunning = false;
+    }
+
+    // Check if CLI is available and get version
+    try {
+      const proc = Bun.spawn(["obsidian", "version"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const exitCode = await proc.exited;
+      if (exitCode === 0) {
+        result.cliAvailable = true;
+        result.version = (await new Response(proc.stdout).text()).trim();
+      }
+    } catch {
+      result.cliAvailable = false;
+    }
+
+    return result;
+  }
+
+  private buildTargetArgs(target: FileTarget): string[] {
+    const args: string[] = [];
+    if (target.file) args.push(`file="${target.file}"`);
+    if (target.path) args.push(`path="${target.path}"`);
+    return args;
+  }
+
+  private parseYamlProperties(output: string): Record<string, string> {
+    const props: Record<string, string> = {};
+    for (const line of output.split("\n")) {
+      const match = line.match(/^(\w[\w-]*):\s*(.+)$/);
+      if (match) {
+        props[match[1]] = match[2].trim();
+      }
+    }
+    return props;
+  }
+}
