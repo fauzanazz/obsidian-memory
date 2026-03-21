@@ -7,6 +7,15 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
+/** Escape content for Obsidian CLI: real newlines → \n, tabs → \t, quotes → \" */
+export function escapeContent(content: string): string {
+  return content
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\t/g, "\\t");
+}
+
 export interface FileTarget {
   file?: string;
   path?: string;
@@ -73,7 +82,7 @@ export class ObsidianCLI {
   }
 
   async create(options: CreateOptions): Promise<string> {
-    const args = ["create", `name="${options.name}"`, `content="${options.content}"`];
+    const args = ["create", `name="${options.name}"`, `content="${escapeContent(options.content)}"`];
     if (options.template) args.push(`template="${options.template}"`);
     if (options.silent) args.push("silent");
     if (options.overwrite) args.push("overwrite");
@@ -81,12 +90,12 @@ export class ObsidianCLI {
   }
 
   async append(options: FileTarget & { content: string }): Promise<string> {
-    const args = ["append", ...this.buildTargetArgs(options), `content="${options.content}"`];
+    const args = ["append", ...this.buildTargetArgs(options), `content="${escapeContent(options.content)}"`];
     return this.exec(args);
   }
 
   async prepend(options: FileTarget & { content: string }): Promise<string> {
-    const args = ["prepend", ...this.buildTargetArgs(options), `content="${options.content}"`];
+    const args = ["prepend", ...this.buildTargetArgs(options), `content="${escapeContent(options.content)}"`];
     return this.exec(args);
   }
 

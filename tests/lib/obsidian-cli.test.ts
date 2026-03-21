@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { ObsidianCLI } from "../../src/lib/obsidian-cli";
+import { ObsidianCLI, escapeContent } from "../../src/lib/obsidian-cli";
 
 // Mock Bun.spawn for all tests
 let mockSpawnResult: { stdout: string; stderr: string; exitCode: number };
@@ -22,6 +22,30 @@ function createMockProc(result: typeof mockSpawnResult) {
     [Symbol.asyncDispose]: async () => {},
   };
 }
+
+describe("escapeContent", () => {
+  test("escapes newlines to \\n", () => {
+    expect(escapeContent("line1\nline2\nline3")).toBe("line1\\nline2\\nline3");
+  });
+
+  test("escapes tabs to \\t", () => {
+    expect(escapeContent("col1\tcol2")).toBe("col1\\tcol2");
+  });
+
+  test("escapes double quotes", () => {
+    expect(escapeContent('say "hello"')).toBe('say \\"hello\\"');
+  });
+
+  test("escapes backslashes before other escapes", () => {
+    expect(escapeContent("path\\to\\file\n")).toBe("path\\\\to\\\\file\\n");
+  });
+
+  test("handles complex multiline content", () => {
+    const input = '---\ntype: session\nagent: "claude"\n---\n\n# Title\n\nContent here.';
+    const expected = '---\\ntype: session\\nagent: \\"claude\\"\\n---\\n\\n# Title\\n\\nContent here.';
+    expect(escapeContent(input)).toBe(expected);
+  });
+});
 
 describe("ObsidianCLI", () => {
   let cli: ObsidianCLI;
@@ -129,7 +153,8 @@ describe("ObsidianCLI", () => {
         });
         expect(capturedArgs).toContain("create");
         expect(capturedArgs.some((a) => a.startsWith('name='))).toBe(true);
-        expect(capturedArgs.some((a) => a.startsWith('content='))).toBe(true);
+        const contentArg = capturedArgs.find((a) => a.startsWith('content='));
+        expect(contentArg).toBe('content="# Test Project\\n\\nContext here."');
       } finally {
         // @ts-ignore
         Bun.spawn = originalSpawn;
