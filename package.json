@@ -4,16 +4,17 @@
   "description": "Universal memory layer for AI coding agents, powered by Obsidian",
   "type": "module",
   "bin": {
-    "obsidian-memory": "./src/index.ts"
+    "obsidian-memory": "./dist/index.js"
   },
   "files": [
-    "src/**/*.ts",
+    "dist/**/*.js",
     "README.md"
   ],
   "scripts": {
     "dev": "bun run src/index.ts",
     "test": "bun test",
-    "build": "bun build src/index.ts --outdir dist --target bun --minify"
+    "build": "bun build src/index.ts --outdir dist --target bun --minify && chmod +x dist/index.js",
+    "prepublishOnly": "bun run build"
   },
   "keywords": [
     "obsidian",
