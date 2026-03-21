@@ -29,7 +29,7 @@ export async function runConsolidate(
   const cli = new ObsidianCLI(vault);
 
   // Search for sessions for this project
-  const results = await cli.search(`project::${project}`, {
+  const results = await cli.search(project, {
     path: "Memory/Sessions/",
   });
 

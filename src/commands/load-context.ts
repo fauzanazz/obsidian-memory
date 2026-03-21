@@ -65,7 +65,7 @@ export async function runLoadContext(
   // Load conventions
   if (opts.includeConventions) {
     try {
-      const results = await cli.search("type::convention", {
+      const results = await cli.search("convention", {
         path: "Memory/Conventions/",
       });
       for (const result of results.slice(0, 5)) {
@@ -84,7 +84,7 @@ export async function runLoadContext(
   // Load recent sessions
   if (opts.includeSessions > 0) {
     try {
-      const results = await cli.search(`project::${project}`, {
+      const results = await cli.search(project, {
         path: "Memory/Sessions/",
         limit: opts.includeSessions,
       });
