@@ -6,6 +6,7 @@ import { runLoadContext } from "./commands/load-context";
 import { runSaveSession } from "./commands/save-session";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
+import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 
 const program = new Command();
 
@@ -17,8 +18,40 @@ program
 program
   .command("init")
   .description("Set up obsidian-memory for a project (create vault, generate agent configs)")
-  .action(() => {
-    console.log("init: not yet implemented");
+  .option("--vault <name>", "Obsidian vault name")
+  .option("--project <name>", "Project name")
+  .option("--vault-path <path>", "Filesystem path to create vault structure")
+  .option("--agents <agents...>", "Agents to configure (claude-code, cursor, antigravity, opencode, forgecode)")
+  .action(async (opts) => {
+    try {
+      const cwd = process.cwd();
+
+      // If no options provided, detect agents and report
+      if (!opts.vault || !opts.project) {
+        const detected = await detectAgents(cwd);
+        console.log("Detected agents:");
+        for (const a of detected) {
+          console.log(`  ${a.detected ? "[x]" : "[ ]"} ${a.label} (${a.indicator})`);
+        }
+        console.log("\nUsage: obsidian-memory init --vault <name> --project <name> [--agents claude-code cursor ...]");
+        return;
+      }
+
+      const agents: AgentId[] = opts.agents || (await detectAgents(cwd))
+        .filter((a) => a.detected)
+        .map((a) => a.id);
+
+      const result = await runInit(cwd, {
+        vault: opts.vault,
+        project: opts.project,
+        agents,
+        vaultPath: opts.vaultPath,
+      });
+      console.log(formatInitResult(result));
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
   });
 
 program
