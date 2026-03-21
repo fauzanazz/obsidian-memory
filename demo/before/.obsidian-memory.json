@@ -1,0 +1,10 @@
+{
+  "vault": "Obsidian Vault",
+  "project": "todo-app",
+  "agents": [
+    "claude-code",
+    "cursor",
+    "antigravity"
+  ],
+  "vaultPath": "/Users/enjat/Documents/Obsidian Vault"
+}

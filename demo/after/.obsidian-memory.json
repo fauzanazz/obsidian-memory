@@ -1,0 +1,9 @@
+{
+  "vault": "DevMemory",
+  "project": "todo-app",
+  "agents": [
+    "claude-code",
+    "cursor",
+    "antigravity"
+  ]
+}
