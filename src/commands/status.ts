@@ -1,6 +1,7 @@
 import { ObsidianCLI } from "../lib/obsidian-cli";
 import { findConfig } from "../lib/config";
 import { detectHybridSearch } from "../lib/search";
+import { validateVaultHealth } from "../lib/vault";
 
 export interface StatusResult {
   configFound: boolean;
@@ -37,9 +38,12 @@ export async function runStatus(cwd: string): Promise<StatusResult> {
   result.cliAvailable = availability.cliAvailable;
   result.obsidianVersion = availability.version;
 
-  // Check vault health (only if we know the vault path)
-  // Note: vault health check requires knowing the filesystem path to the vault
-  // For now, we skip this unless we can resolve it
+  // Check vault health if we have a filesystem path
+  if (found?.config.vaultPath) {
+    const health = await validateVaultHealth(found.config.vaultPath);
+    result.vaultHealthy = health.healthy;
+    result.missingFolders = health.missingFolders;
+  }
 
   // Check hybrid search
   result.hybridSearchAvailable = await detectHybridSearch();

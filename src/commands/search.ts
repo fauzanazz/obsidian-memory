@@ -19,11 +19,10 @@ export async function runSearch(
     );
   }
 
-  const { vault } = found.config;
+  const { vault, vaultPath } = found.config;
   const cli = new ObsidianCLI(vault);
 
-  // TODO: resolve vault filesystem path for hybrid search
-  const provider = await createSearchProvider(cli);
+  const provider = await createSearchProvider(cli, vaultPath);
 
   const results = await provider.search(query, {
     path: options?.path || "Memory/",

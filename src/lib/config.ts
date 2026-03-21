@@ -4,6 +4,7 @@ export interface MemoryConfig {
   vault: string;
   project: string;
   agents: string[];
+  vaultPath?: string;
 }
 
 const CONFIG_FILENAME = ".obsidian-memory.json";

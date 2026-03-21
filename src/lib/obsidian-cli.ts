@@ -1,3 +1,12 @@
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), ms)
+    ),
+  ]);
+}
+
 export interface FileTarget {
   file?: string;
   path?: string;
@@ -130,7 +139,7 @@ export class ObsidianCLI {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const exitCode = await pgrep.exited;
+      const exitCode = await withTimeout(pgrep.exited, 5000);
       result.obsidianRunning = exitCode === 0;
     } catch {
       result.obsidianRunning = false;
@@ -138,11 +147,22 @@ export class ObsidianCLI {
 
     // Check if CLI is available and get version
     try {
+      // First check if the obsidian binary exists
+      const which = Bun.spawn(["which", "obsidian"], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const whichExit = await withTimeout(which.exited, 3000);
+      if (whichExit !== 0) throw new Error("not found");
+
       const proc = Bun.spawn(["obsidian", "version"], {
         stdout: "pipe",
         stderr: "pipe",
       });
-      const exitCode = await proc.exited;
+      const exitCode = await withTimeout(proc.exited, 5000).catch(() => {
+        proc.kill();
+        return null;
+      });
       if (exitCode === 0) {
         result.cliAvailable = true;
         result.version = (await new Response(proc.stdout).text()).trim();
