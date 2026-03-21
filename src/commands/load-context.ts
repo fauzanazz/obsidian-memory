@@ -62,6 +62,16 @@ export async function runLoadContext(
     }
   }
 
+  // Load module documentation (for debugging and anti-duplication)
+  try {
+    const modulesDocs = await cli.read({
+      path: `Memory/Projects/${project}/Docs/Modules.md`,
+    });
+    sections.push("## Module Documentation\n\n" + modulesDocs);
+  } catch {
+    // Docs not generated yet — skip silently
+  }
+
   // Load conventions
   if (opts.includeConventions) {
     try {

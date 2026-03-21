@@ -90,6 +90,44 @@ This merges sessions older than 30 days into monthly journal entries, keeping th
 
 ---
 
+## Documentation Protocol
+
+This project maintains structured documentation in the memory vault to prevent feature duplication
+and enable surgical debugging. Generate docs with \`obsidian-memory document\`, then maintain them
+during sessions.
+
+### Before Creating New Code
+
+Search the documentation before implementing anything new:
+
+\`\`\`bash
+obsidian-memory search "feature name or concept"
+\`\`\`
+
+If the feature already exists, work with the existing implementation instead of creating a duplicate.
+The Features doc lists what's been built; the Modules doc maps directories to their purpose.
+
+### Before Debugging
+
+Read the module documentation to know exactly where to look:
+
+\`\`\`bash
+obsidian-memory search "module or area related to the bug"
+\`\`\`
+
+The Modules doc maps directories to their purpose and entry points — use it to go straight
+to the right file instead of exploring blindly.
+
+### After Implementing
+
+Update the relevant documentation:
+- Add new features to the Features inventory
+- Update module descriptions if you changed a module's purpose
+- Add patterns or gotchas to Conventions
+- Update Architecture if you changed the system structure
+
+---
+
 ## Troubleshooting
 
 ### "Obsidian is not running"
@@ -112,6 +150,7 @@ The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obs
 | \`obsidian-memory save-session\` | Save a session summary |
 | \`obsidian-memory search <query>\` | Search memory vault |
 | \`obsidian-memory consolidate\` | Merge old sessions |
+| \`obsidian-memory document\` | Scan project and generate docs |
 | \`obsidian-memory init\` | Set up a new project |
 `;
 }

@@ -8,6 +8,7 @@ import { runLoadContext } from "./commands/load-context";
 import { runSaveSession } from "./commands/save-session";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
+import { runDocument, formatDocumentResult } from "./commands/document";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 
 const program = new Command();
@@ -199,6 +200,22 @@ program
         auto: opts.auto,
       });
       console.log(result.message);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("document")
+  .description("Scan the project and generate documentation in the memory vault")
+  .option("--force", "Overwrite existing docs entirely (ignore section markers)")
+  .action(async (opts) => {
+    try {
+      const result = await runDocument(process.cwd(), {
+        force: opts.force,
+      });
+      console.log(formatDocumentResult(result));
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
