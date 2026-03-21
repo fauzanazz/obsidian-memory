@@ -6,10 +6,28 @@
   "bin": {
     "obsidian-memory": "./src/index.ts"
   },
+  "files": [
+    "src/**/*.ts",
+    "README.md"
+  ],
   "scripts": {
     "dev": "bun run src/index.ts",
     "test": "bun test",
-    "build": "bun build src/index.ts --outdir dist --target bun"
+    "build": "bun build src/index.ts --outdir dist --target bun --minify"
+  },
+  "keywords": [
+    "obsidian",
+    "memory",
+    "ai",
+    "coding-agent",
+    "claude-code",
+    "cursor",
+    "context",
+    "session"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/enjat/obsidian-memory"
   },
   "dependencies": {
     "commander": "^13.0.0"
