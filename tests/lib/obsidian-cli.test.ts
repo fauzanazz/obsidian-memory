@@ -32,8 +32,8 @@ describe("escapeContent", () => {
     expect(escapeContent("col1\tcol2")).toBe("col1\\tcol2");
   });
 
-  test("escapes double quotes", () => {
-    expect(escapeContent('say "hello"')).toBe('say \\"hello\\"');
+  test("preserves double quotes (no escaping needed without shell quoting)", () => {
+    expect(escapeContent('say "hello"')).toBe('say "hello"');
   });
 
   test("escapes backslashes before other escapes", () => {
@@ -42,7 +42,7 @@ describe("escapeContent", () => {
 
   test("handles complex multiline content", () => {
     const input = '---\ntype: session\nagent: "claude"\n---\n\n# Title\n\nContent here.';
-    const expected = '---\\ntype: session\\nagent: \\"claude\\"\\n---\\n\\n# Title\\n\\nContent here.';
+    const expected = '---\\ntype: session\\nagent: "claude"\\n---\\n\\n# Title\\n\\nContent here.';
     expect(escapeContent(input)).toBe(expected);
   });
 });
@@ -73,11 +73,11 @@ describe("ObsidianCLI", () => {
       };
 
       try {
-        await cli.exec(["read", 'file="Test"']);
+        await cli.exec(["read", 'file=Test']);
         expect(capturedArgs[0]).toBe("obsidian");
         expect(capturedArgs[1]).toBe('vault=TestVault');
         expect(capturedArgs[2]).toBe("read");
-        expect(capturedArgs[3]).toBe('file="Test"');
+        expect(capturedArgs[3]).toBe('file=Test');
       } finally {
         // @ts-ignore
         Bun.spawn = origSpawn;
@@ -129,7 +129,7 @@ describe("ObsidianCLI", () => {
 
       try {
         await cli.read({ path: "Memory/Projects/test/context.md" });
-        expect(capturedArgs).toContain('path="Memory/Projects/test/context.md"');
+        expect(capturedArgs).toContain('path=Memory/Projects/test/context.md');
       } finally {
         // @ts-ignore
         Bun.spawn = originalSpawn;
@@ -152,9 +152,29 @@ describe("ObsidianCLI", () => {
           content: "# Test Project\n\nContext here.",
         });
         expect(capturedArgs).toContain("create");
-        expect(capturedArgs.some((a) => a.startsWith('name='))).toBe(true);
+        // name contains "/" so it should use path= with .md extension
+        expect(capturedArgs.some((a) => a.startsWith('path='))).toBe(true);
+        expect(capturedArgs).toContain('path=Memory/Projects/test/context.md');
         const contentArg = capturedArgs.find((a) => a.startsWith('content='));
-        expect(contentArg).toBe('content="# Test Project\\n\\nContext here."');
+        expect(contentArg).toBe('content=# Test Project\\n\\nContext here.');
+      } finally {
+        // @ts-ignore
+        Bun.spawn = originalSpawn;
+      }
+    });
+
+    test("uses name= for names without slashes", async () => {
+      let capturedArgs: string[] = [];
+      // @ts-ignore
+      Bun.spawn = (cmd: string[], _opts?: any) => {
+        capturedArgs = cmd as string[];
+        return createMockProc({ stdout: "Created: test.md", stderr: "", exitCode: 0 });
+      };
+
+      try {
+        await cli.create({ name: "simple-note", content: "hello" });
+        expect(capturedArgs).toContain('name=simple-note');
+        expect(capturedArgs.every((a) => !a.startsWith('path='))).toBe(true);
       } finally {
         // @ts-ignore
         Bun.spawn = originalSpawn;
@@ -191,7 +211,7 @@ describe("ObsidianCLI", () => {
       try {
         await cli.append({ file: "Journal", content: "New entry" });
         expect(capturedArgs).toContain("append");
-        expect(capturedArgs.some((a) => a.startsWith('file='))).toBe(true);
+        expect(capturedArgs).toContain('file=Journal');
         expect(capturedArgs.some((a) => a.startsWith('content='))).toBe(true);
       } finally {
         // @ts-ignore
@@ -203,8 +223,8 @@ describe("ObsidianCLI", () => {
   describe("search", () => {
     test("searches with query and returns JSON results", async () => {
       const mockResults = JSON.stringify([
-        { path: "Memory/Projects/test/context.md", matches: ["test context"] },
-        { path: "Memory/Sessions/2026-03-20-claude.md", matches: ["test session"] },
+        "Memory/Projects/test/context.md",
+        "Memory/Sessions/2026-03-20-claude.md",
       ]);
 
       // @ts-ignore
@@ -232,7 +252,7 @@ describe("ObsidianCLI", () => {
 
       try {
         await cli.search("test", { path: "Memory/Projects/" });
-        expect(capturedArgs.some((a) => a.startsWith('path='))).toBe(true);
+        expect(capturedArgs).toContain('path=Memory/Projects/');
       } finally {
         // @ts-ignore
         Bun.spawn = originalSpawn;
@@ -272,8 +292,9 @@ describe("ObsidianCLI", () => {
       try {
         await cli.setProperty({ file: "test", name: "updated", value: "2026-03-21" });
         expect(capturedArgs).toContain("property:set");
-        expect(capturedArgs.some((a) => a.startsWith('name='))).toBe(true);
-        expect(capturedArgs.some((a) => a.startsWith('value='))).toBe(true);
+        expect(capturedArgs).toContain('file=test');
+        expect(capturedArgs).toContain('name=updated');
+        expect(capturedArgs).toContain('value=2026-03-21');
       } finally {
         // @ts-ignore
         Bun.spawn = originalSpawn;
@@ -283,10 +304,7 @@ describe("ObsidianCLI", () => {
 
   describe("getTags", () => {
     test("lists files with a specific tag", async () => {
-      const mockOutput = JSON.stringify([
-        "Memory/Projects/test/context.md",
-        "Memory/Conventions/coding.md",
-      ]);
+      const mockOutput = "Memory/Projects/test/context.md\nMemory/Conventions/coding.md";
 
       // @ts-ignore
       Bun.spawn = (_cmd: string[], _opts?: any) => {

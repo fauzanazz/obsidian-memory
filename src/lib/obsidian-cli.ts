@@ -7,11 +7,10 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   ]);
 }
 
-/** Escape content for Obsidian CLI: real newlines → \n, tabs → \t, quotes → \" */
+/** Escape content for Obsidian CLI: real newlines → \n, tabs → \t, backslashes → \\\\ */
 export function escapeContent(content: string): string {
   return content
     .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
     .replace(/\n/g, "\\n")
     .replace(/\t/g, "\\t");
 }
@@ -73,7 +72,14 @@ export class ObsidianCLI {
       throw new Error(stderr.trim() || `obsidian CLI exited with code ${exitCode}`);
     }
 
-    return stdout.trim();
+    const output = stdout.trim();
+
+    // Obsidian CLI returns exit 0 with "Error:" prefix for some errors
+    if (output.startsWith("Error:")) {
+      throw new Error(output);
+    }
+
+    return output;
   }
 
   async read(target: FileTarget): Promise<string> {
@@ -82,29 +88,40 @@ export class ObsidianCLI {
   }
 
   async create(options: CreateOptions): Promise<string> {
-    const args = ["create", `name="${options.name}"`, `content="${escapeContent(options.content)}"`];
-    if (options.template) args.push(`template="${options.template}"`);
+    const args = ["create"];
+    // Obsidian CLI rejects "/" in name — use path for nested paths
+    if (options.name.includes("/")) {
+      const path = options.name.endsWith(".md") ? options.name : `${options.name}.md`;
+      args.push(`path=${path}`);
+    } else {
+      args.push(`name=${options.name}`);
+    }
+    args.push(`content=${escapeContent(options.content)}`);
+    if (options.template) args.push(`template=${options.template}`);
     if (options.silent) args.push("silent");
     if (options.overwrite) args.push("overwrite");
     return this.exec(args);
   }
 
   async append(options: FileTarget & { content: string }): Promise<string> {
-    const args = ["append", ...this.buildTargetArgs(options), `content="${escapeContent(options.content)}"`];
+    const args = ["append", ...this.buildTargetArgs(options), `content=${escapeContent(options.content)}`];
     return this.exec(args);
   }
 
   async prepend(options: FileTarget & { content: string }): Promise<string> {
-    const args = ["prepend", ...this.buildTargetArgs(options), `content="${escapeContent(options.content)}"`];
+    const args = ["prepend", ...this.buildTargetArgs(options), `content=${escapeContent(options.content)}`];
     return this.exec(args);
   }
 
   async search(query: string, options?: SearchOptions): Promise<SearchResult[]> {
-    const args = ["search", `query="${query}"`, "format=json"];
-    if (options?.path) args.push(`path="${options.path}"`);
+    const args = ["search", `query=${query}`, "format=json"];
+    if (options?.path) args.push(`path=${options.path}`);
     if (options?.limit) args.push(`limit=${options.limit}`);
     const output = await this.exec(args);
-    return JSON.parse(output || "[]");
+    if (!output || !output.startsWith("[")) return [];
+    const raw: string[] = JSON.parse(output);
+    // CLI returns a flat string array of paths — map to SearchResult
+    return raw.map((path) => ({ path, matches: [] }));
   }
 
   async getProperties(target: FileTarget): Promise<Record<string, string>> {
@@ -117,23 +134,25 @@ export class ObsidianCLI {
     const args = [
       "property:set",
       ...this.buildTargetArgs(options),
-      `name="${options.name}"`,
-      `value="${options.value}"`,
+      `name=${options.name}`,
+      `value=${options.value}`,
     ];
-    if (options.type) args.push(`type="${options.type}"`);
+    if (options.type) args.push(`type=${options.type}`);
     await this.exec(args);
   }
 
   async getFilesWithTag(tag: string): Promise<string[]> {
-    const args = ["tag", `tag="${tag}"`, "format=json"];
+    const args = ["tag", `name=${tag}`];
     const output = await this.exec(args);
-    return JSON.parse(output || "[]");
+    if (!output) return [];
+    return output.split("\n").filter(Boolean);
   }
 
   async getBacklinks(target: FileTarget): Promise<string[]> {
     const args = ["backlinks", ...this.buildTargetArgs(target), "format=json"];
     const output = await this.exec(args);
-    return JSON.parse(output || "[]");
+    if (!output || output.startsWith("No ")) return [];
+    return JSON.parse(output);
   }
 
   async checkAvailability(): Promise<AvailabilityResult> {
@@ -185,8 +204,8 @@ export class ObsidianCLI {
 
   private buildTargetArgs(target: FileTarget): string[] {
     const args: string[] = [];
-    if (target.file) args.push(`file="${target.file}"`);
-    if (target.path) args.push(`path="${target.path}"`);
+    if (target.file) args.push(`file=${target.file}`);
+    if (target.path) args.push(`path=${target.path}`);
     return args;
   }
 
