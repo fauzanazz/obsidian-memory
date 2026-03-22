@@ -94,8 +94,8 @@ export async function runLoadContext(
   // Load recent sessions
   if (opts.includeSessions > 0) {
     try {
-      const results = await cli.search(project, {
-        path: "Memory/Sessions/",
+      const results = await cli.search("session", {
+        path: `Memory/Sessions/${project}/`,
         limit: opts.includeSessions,
       });
       if (results.length > 0) {

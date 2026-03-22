@@ -30,6 +30,7 @@ export function getVaultStructure(project: string): VaultStructure {
     ...VAULT_FOLDERS,
     `Memory/Projects/${project}`,
     `Memory/Projects/${project}/Docs`,
+    `Memory/Sessions/${project}`,
   ];
 
   const files: VaultFile[] = [

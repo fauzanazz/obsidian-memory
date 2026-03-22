@@ -59,7 +59,7 @@ describe("save-session command", () => {
       summary: "Implemented the CLI wrapper",
     });
 
-    expect(result).toMatch(/^Memory\/Sessions\/\d{4}-\d{2}-\d{2}-claude-code-[a-f0-9]{6}$/);
+    expect(result).toMatch(/^Memory\/Sessions\/test-app\/\d{4}-\d{2}-\d{2}-claude-code-[a-f0-9]{6}$/);
   });
 
   test("throws when no config found", async () => {

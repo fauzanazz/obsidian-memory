@@ -32,8 +32,9 @@ describe("Vault Structure", () => {
       expect(structure.folders.length).toBeGreaterThan(0);
       expect(structure.files.length).toBeGreaterThan(0);
 
-      // Should include project-specific folder
+      // Should include project-specific folders
       expect(structure.folders).toContain("Memory/Projects/test-project");
+      expect(structure.folders).toContain("Memory/Sessions/test-project");
 
       // Should include Index.md
       const indexFile = structure.files.find((f) => f.path === "Memory/Index.md");
