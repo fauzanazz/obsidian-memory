@@ -137,8 +137,6 @@ created: "{{date}}"
 updated: "{{date}}"
 tags:
   - session
-  - agent/{{agent}}
-  - project/{{project}}
 ---
 
 # Session — {{date}} — {{agent}}
@@ -167,7 +165,7 @@ project: "{{project}}"
 created: "{{date}}"
 updated: "{{date}}"
 tags:
-  - project/{{project}}
+  - project
 ---
 
 # {{project}}
@@ -190,7 +188,6 @@ created: "{{date}}"
 status: accepted
 tags:
   - decision
-  - project/{{project}}
 ---
 
 # Decision: {{title}}

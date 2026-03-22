@@ -77,10 +77,21 @@ export async function runInit(
   });
   result.configWritten = true;
 
-  // Generate and write AGENTS.md
+  // Generate and write AGENTS.md (append if existing)
   const agentsMd = generateAgentsMd(options.project, options.vault);
-  await Bun.write(join(projectDir, "AGENTS.md"), agentsMd);
-  result.agentsMdWritten = true;
+  const agentsMdPath = join(projectDir, "AGENTS.md");
+  const existingAgentsMd = Bun.file(agentsMdPath);
+  if (await existingAgentsMd.exists()) {
+    const existingContent = await existingAgentsMd.text();
+    if (!existingContent.includes("obsidian-memory")) {
+      await Bun.write(agentsMdPath, existingContent.trimEnd() + "\n\n" + agentsMd);
+      result.agentsMdWritten = true;
+    }
+    // Already contains obsidian-memory config — skip
+  } else {
+    await Bun.write(agentsMdPath, agentsMd);
+    result.agentsMdWritten = true;
+  }
 
   // Generate agent-specific configs
   for (const agentId of options.agents) {

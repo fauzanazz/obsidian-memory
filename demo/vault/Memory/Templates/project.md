@@ -4,7 +4,7 @@ project: "{{project}}"
 created: "{{date}}"
 updated: "{{date}}"
 tags:
-  - project/{{project}}
+  - project
 ---
 
 # {{project}}

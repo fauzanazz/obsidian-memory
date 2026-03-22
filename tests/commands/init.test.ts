@@ -87,6 +87,38 @@ describe("init command", () => {
       expect(agentsMd).toContain("save-session");
     });
 
+    test("appends to existing AGENTS.md", async () => {
+      const existingContent = "# My Project Agents\n\nSome existing agent instructions.";
+      await Bun.write(join(tempDir, "AGENTS.md"), existingContent);
+
+      await runInit(tempDir, {
+        vault: "TestVault",
+        project: "test-app",
+        agents: [],
+      });
+
+      const agentsMd = await Bun.file(join(tempDir, "AGENTS.md")).text();
+      expect(agentsMd).toStartWith("# My Project Agents");
+      expect(agentsMd).toContain("Some existing agent instructions.");
+      expect(agentsMd).toContain("obsidian-memory");
+      expect(agentsMd).toContain("TestVault");
+    });
+
+    test("skips AGENTS.md if obsidian-memory already configured", async () => {
+      const existingContent = "# Agents\n\nAlready has obsidian-memory config.";
+      await Bun.write(join(tempDir, "AGENTS.md"), existingContent);
+
+      const { agentsMdWritten } = await runInit(tempDir, {
+        vault: "TestVault",
+        project: "test-app",
+        agents: [],
+      });
+
+      const agentsMd = await Bun.file(join(tempDir, "AGENTS.md")).text();
+      expect(agentsMd).toBe(existingContent);
+      expect(agentsMdWritten).toBe(false);
+    });
+
     test("generates Claude Code config", async () => {
       const result = await runInit(tempDir, {
         vault: "V",

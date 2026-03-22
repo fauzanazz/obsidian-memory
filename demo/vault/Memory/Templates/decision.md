@@ -5,7 +5,6 @@ created: "{{date}}"
 status: accepted
 tags:
   - decision
-  - project/{{project}}
 ---
 
 # Decision: {{title}}

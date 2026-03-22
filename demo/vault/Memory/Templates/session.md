@@ -6,8 +6,6 @@ created: "{{date}}"
 updated: "{{date}}"
 tags:
   - session
-  - agent/{{agent}}
-  - project/{{project}}
 ---
 
 # Session — {{date}} — {{agent}}
