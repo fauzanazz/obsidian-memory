@@ -28,7 +28,7 @@ export async function runSaveSession(
 
   const date = new Date().toISOString().split("T")[0];
   const hash = randomBytes(3).toString("hex");
-  const noteName = `Memory/Sessions/${date}-${options.agent}-${hash}`;
+  const noteName = `Memory/Sessions/${project}/${date}-${options.agent}-${hash}`;
 
   const content = sessionNote({
     agent: options.agent,

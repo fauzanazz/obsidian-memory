@@ -126,7 +126,7 @@ describe("E2E: Full obsidian-memory workflow", () => {
       nextSteps: ["Publish to npm"],
     });
 
-    expect(sessionNoteName).toContain("Memory/Sessions/");
+    expect(sessionNoteName).toContain(`Memory/Sessions/${PROJECT}/`);
     expect(sessionNoteName).toContain("claude-code");
 
     // Verify the note was actually created by reading it
@@ -161,7 +161,7 @@ describe("E2E: Full obsidian-memory workflow", () => {
     await Bun.sleep(500);
 
     const { results, provider } = await runSearch(projectDir, PROJECT, {
-      path: "Memory/Sessions/",
+      path: `Memory/Sessions/${PROJECT}/`,
     });
 
     expect(provider).toBeTruthy();
