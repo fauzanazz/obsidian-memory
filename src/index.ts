@@ -10,6 +10,7 @@ import { runSaveFeature } from "./commands/save-feature";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
 import { runDocument, formatDocumentResult } from "./commands/document";
+import { runSaveDecision } from "./commands/save-decision";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 
 const program = new Command();
@@ -245,6 +246,38 @@ program
         auto: opts.auto,
       });
       console.log(result.message);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("save-decision")
+  .description("Create an Architecture Decision Record (ADR) in the memory vault")
+  .requiredOption("--title <title>", "Decision title (e.g., 'JWT over Session Cookies')")
+  .requiredOption("--context <text>", "What problem motivated this decision")
+  .requiredOption("--decision <text>", "What was decided (1-3 sentences)")
+  .option("--status <status>", "Decision status (proposed, accepted, superseded, deprecated)", "accepted")
+  .option("--categories <items...>", "Decision categories/domains")
+  .option("--impacts <items...>", "Feature slugs affected by this decision")
+  .option("--supersedes <number>", "ADR number this decision replaces", parseInt)
+  .option("--alternatives <items...>", "Alternatives in 'Name: description' format")
+  .option("--consequences <text>", "What follows from this decision")
+  .action(async (opts) => {
+    try {
+      const { notePath, adrNumber } = await runSaveDecision(process.cwd(), {
+        title: opts.title,
+        context: opts.context,
+        decision: opts.decision,
+        status: opts.status,
+        categories: opts.categories,
+        impacts: opts.impacts,
+        supersedes: opts.supersedes,
+        alternatives: opts.alternatives,
+        consequences: opts.consequences,
+      });
+      console.log(`ADR-${String(adrNumber).padStart(3, "0")} saved: ${notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
