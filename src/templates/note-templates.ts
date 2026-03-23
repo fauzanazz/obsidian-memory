@@ -63,6 +63,118 @@ export function sessionNote(options: {
   return lines.join("\n");
 }
 
+export interface FeatureNoteOptions {
+  project: string;
+  slug: string;
+  title: string;
+  date: string;
+  status: "draft" | "in-progress" | "completed" | "deprecated";
+  categories?: string[];
+  decidedBy?: string[];
+  sessions?: string[];
+  summary?: string;
+  keyFiles?: Array<{ path: string; role: string }>;
+  limitations?: string[];
+}
+
+export function featureNote(options: FeatureNoteOptions): string {
+  const lines: string[] = [];
+
+  // YAML frontmatter
+  lines.push("---");
+  lines.push("type: feature-note");
+  lines.push(`project: ${options.project}`);
+  lines.push(`feature: ${options.slug}`);
+  lines.push(`created: ${options.date}`);
+  lines.push(`updated: ${options.date}`);
+  lines.push(`status: ${options.status}`);
+
+  if (options.categories?.length) {
+    lines.push("categories:");
+    for (const c of options.categories) lines.push(`  - ${c}`);
+  }
+
+  if (options.decidedBy?.length) {
+    lines.push("decided_by:");
+    for (const d of options.decidedBy) lines.push(`  - ${d}`);
+  }
+
+  if (options.sessions?.length) {
+    lines.push("sessions:");
+    for (const s of options.sessions) lines.push(`  - ${s}`);
+  }
+
+  lines.push("tags:");
+  lines.push("  - feature");
+  lines.push(`  - project/${options.project}`);
+  lines.push("---");
+  lines.push("");
+
+  // Title
+  lines.push(`# ${options.title}`);
+  lines.push("");
+
+  // Summary
+  lines.push("## Summary");
+  if (options.summary) {
+    lines.push(options.summary);
+  } else {
+    lines.push("<!-- Agent: describe what this feature does -->");
+  }
+  lines.push("");
+
+  // How It Works
+  lines.push("## How It Works");
+  lines.push("<!-- Agent: explain the implementation approach -->");
+  lines.push("");
+
+  // Key Files
+  lines.push("## Key Files");
+  if (options.keyFiles?.length) {
+    lines.push("| File | Role |");
+    lines.push("|------|------|");
+    for (const kf of options.keyFiles) {
+      lines.push(`| \`${kf.path}\` | ${kf.role} |`);
+    }
+  } else {
+    lines.push("<!-- Agent: add key files as | `path` | role | rows -->");
+  }
+  lines.push("");
+
+  // Decisions & Trade-offs
+  lines.push("## Decisions & Trade-offs");
+  if (options.decidedBy?.length) {
+    for (const d of options.decidedBy) {
+      lines.push(`- [[${d}]]`);
+    }
+  } else {
+    lines.push("<!-- Agent: link to ADRs or describe trade-offs -->");
+  }
+  lines.push("");
+
+  // Known Limitations
+  lines.push("## Known Limitations");
+  if (options.limitations?.length) {
+    for (const l of options.limitations) lines.push(`- ${l}`);
+  } else {
+    lines.push("<!-- Agent: document known limitations -->");
+  }
+  lines.push("");
+
+  // Related
+  lines.push("## Related");
+  lines.push(`- Project: [[${options.project}/context|${options.project}]]`);
+  lines.push(`- Features: [[Features|Feature Index]]`);
+  if (options.sessions?.length) {
+    for (const s of options.sessions) {
+      lines.push(`- Session: [[${s}]]`);
+    }
+  }
+  lines.push("");
+
+  return lines.join("\n");
+}
+
 export function decisionNote(options: {
   project: string;
   date: string;

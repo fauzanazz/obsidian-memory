@@ -69,16 +69,16 @@ export function generateFeatures(project: string): string {
 
 # Features — ${project}
 
-> Before creating new functionality, check if it already exists here.
+> Before creating new functionality, search this index first.
 
-## Feature Inventory
+## Feature Index
 
-| Feature | Status | Module | Files | Description |
-|---------|--------|--------|-------|-------------|
-<!-- Agent: add features as they are implemented -->
+${AUTO_START("feature-index")}
+<!-- Feature notes are auto-indexed here. Use save-feature to add new ones. -->
+${AUTO_END("feature-index")}
 
 ## Implementation Notes
-<!-- Agent: add notes about how features work, edge cases, and dependencies -->
+<!-- Agent: add cross-cutting notes about how features interact -->
 
 ---
 
