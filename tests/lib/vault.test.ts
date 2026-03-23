@@ -57,6 +57,18 @@ describe("Vault Structure", () => {
       expect(filePaths).toContain("Memory/Projects/my-app/decisions.md");
       expect(filePaths).toContain("Memory/Projects/my-app/progress.md");
     });
+
+    test("includes Features folder and stub Features.md index", () => {
+      const structure = getVaultStructure("my-app");
+      expect(structure.folders).toContain("Memory/Projects/my-app/Features");
+
+      const featuresFile = structure.files.find(
+        (f) => f.path === "Memory/Projects/my-app/Docs/Features.md"
+      );
+      expect(featuresFile).toBeDefined();
+      expect(featuresFile!.content).toContain("# Features — my-app");
+      expect(featuresFile!.content).toContain("## Feature Index");
+    });
   });
 
   describe("validateVaultHealth", () => {
