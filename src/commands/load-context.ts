@@ -144,9 +144,13 @@ async function loadTier2(
       const decisionsDoc = await cli.read({
         path: `Memory/Projects/${project}/decisions.md`,
       });
-      const log = extractSection(decisionsDoc, "Decision Log");
-      if (log?.trim()) {
-        sections.push("## Decisions\n\n" + log.trim());
+      // Extract ADR wikilinks from anywhere in the file (prepend adds them at top)
+      const adrLinks = decisionsDoc
+        .split("\n")
+        .filter((line) => /^\s*-\s*\[\[ADRs\/ADR-/.test(line))
+        .join("\n");
+      if (adrLinks) {
+        sections.push("## Decisions\n\n" + adrLinks);
       } else {
         // Backwards compat: old inline format
         sections.push("## Decisions\n\n" + decisionsDoc);

@@ -175,6 +175,80 @@ describe("load-context command", () => {
     }
   });
 
+  test("extracts ADR wikilinks from decisions.md as compact index", async () => {
+    // Simulates decisions.md after save-decision prepends links at the top
+    const decisionsContent = [
+      "- [[ADRs/ADR-002-use-postgres|ADR-002: Use Postgres]] — accepted (2026-03-22)",
+      "- [[ADRs/ADR-001-use-bun|ADR-001: Use Bun]] — accepted (2026-03-21)",
+      "",
+      "# Decisions — my-app",
+      "",
+      "> Architecture Decision Records. Newest first.",
+      "",
+      "## Decision Log",
+      "",
+      "<!-- New ADRs are automatically indexed here by save-decision -->",
+      "",
+      "---",
+      "",
+      "See also: [[Features]]",
+    ].join("\n");
+
+    // @ts-ignore
+    Bun.spawn = (cmd: string[], _opts?: any) => {
+      const args = cmd as string[];
+      if (args.includes("read") && args.some((a) => a.includes("context.md"))) {
+        return createMockProc({ stdout: "# my-app", stderr: "", exitCode: 0 });
+      }
+      if (args.includes("read") && args.some((a) => a.includes("decisions.md"))) {
+        return createMockProc({ stdout: decisionsContent, stderr: "", exitCode: 0 });
+      }
+      if (args.includes("read")) {
+        return createMockProc({ stdout: "", stderr: "not found", exitCode: 1 });
+      }
+      if (args.includes("search")) {
+        return createMockProc({ stdout: "[]", stderr: "", exitCode: 0 });
+      }
+      return createMockProc({ stdout: "", stderr: "", exitCode: 0 });
+    };
+
+    const output = await runLoadContext(tempDir);
+    expect(output).toContain("ADR-002: Use Postgres");
+    expect(output).toContain("ADR-001: Use Bun");
+    // Should NOT include the full file boilerplate
+    expect(output).not.toContain("See also:");
+    expect(output).not.toContain("<!-- New ADRs");
+  });
+
+  test("falls back to full decisions.md for old inline format", async () => {
+    // @ts-ignore
+    Bun.spawn = (cmd: string[], _opts?: any) => {
+      const args = cmd as string[];
+      if (args.includes("read") && args.some((a) => a.includes("context.md"))) {
+        return createMockProc({ stdout: "# my-app", stderr: "", exitCode: 0 });
+      }
+      if (args.includes("read") && args.some((a) => a.includes("decisions.md"))) {
+        return createMockProc({
+          stdout: "## Decision: Use Bun\nChose Bun for speed\n## Decision: Use Hono\nChose Hono for the API",
+          stderr: "",
+          exitCode: 0,
+        });
+      }
+      if (args.includes("read")) {
+        return createMockProc({ stdout: "", stderr: "not found", exitCode: 1 });
+      }
+      if (args.includes("search")) {
+        return createMockProc({ stdout: "[]", stderr: "", exitCode: 0 });
+      }
+      return createMockProc({ stdout: "", stderr: "", exitCode: 0 });
+    };
+
+    const output = await runLoadContext(tempDir);
+    // Old format — should include the full content
+    expect(output).toContain("Use Bun");
+    expect(output).toContain("Use Hono");
+  });
+
   test("handles missing vault files gracefully", async () => {
     // @ts-ignore
     Bun.spawn = (_cmd: string[], _opts?: any) => {
