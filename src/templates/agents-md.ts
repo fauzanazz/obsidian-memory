@@ -18,7 +18,14 @@ At the beginning of every session, run:
 obsidian-memory load-context
 \`\`\`
 
-This outputs the project context, recent decisions, conventions, and the last few session summaries.
+This outputs a compact project summary, current state, active blockers, pending next steps,
+and one-line indexes of features, decisions, modules, and recent sessions.
+
+**Options for different needs:**
+- \`--minimal\` — just the essentials (~500 tokens, use when context is tight)
+- \`--focus "auth"\` — full detail for auth-related notes, compact for the rest
+- \`--full\` — everything (full session notes, full docs, full conventions)
+
 Read the output carefully before starting work — it contains decisions and context from prior sessions.
 
 ---

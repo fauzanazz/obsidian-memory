@@ -3,3 +3,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .planning/
+
+# Agent orchestrator state (auto-generated)
+.agent-state/
