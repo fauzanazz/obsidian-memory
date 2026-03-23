@@ -4,7 +4,7 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import { basename } from "path";
 import { runStatus, formatStatus } from "./commands/status";
-import { runLoadContext } from "./commands/load-context";
+import { runLoadContext, type LoadContextTier } from "./commands/load-context";
 import { runSaveSession } from "./commands/save-session";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
@@ -127,12 +127,22 @@ program
 program
   .command("load-context")
   .description("Load project context from the memory vault")
+  .option("--minimal", "Tier 1 only: project summary, current state, blockers (~500 tokens)")
+  .option("--focus <keyword>", "Load full content for notes matching keyword, compact for the rest")
+  .option("--full", "Load everything (backwards compatible, original behavior)")
   .option("--no-conventions", "Exclude conventions")
   .option("--no-decisions", "Exclude decisions")
   .option("--sessions <n>", "Number of recent sessions to include", "3")
   .action(async (opts) => {
     try {
+      let tier: LoadContextTier = "default";
+      if (opts.minimal) tier = "minimal";
+      else if (opts.focus) tier = "focus";
+      else if (opts.full) tier = "full";
+
       const output = await runLoadContext(process.cwd(), {
+        tier,
+        focus: opts.focus,
         includeConventions: opts.conventions !== false,
         includeDecisions: opts.decisions !== false,
         includeSessions: parseInt(opts.sessions, 10),
