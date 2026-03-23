@@ -30,10 +30,11 @@ export async function runSaveFeature(
   const { vault, project } = found.config;
   const cli = new ObsidianCLI(vault);
 
-  // Sanitize slug: strip path separators and traversal sequences
+  // Sanitize slug: allowlist only valid kebab-case characters
   const safeSlug = options.slug
-    .replace(/\.\./g, "")
-    .replace(/[/\\]/g, "-")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "-")
+    .replace(/-{2,}/g, "-")
     .replace(/^-+|-+$/g, "");
 
   if (!safeSlug) {
