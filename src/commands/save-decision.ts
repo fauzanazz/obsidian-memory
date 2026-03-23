@@ -93,7 +93,7 @@ async function getNextAdrNumber(
   try {
     const results = await cli.search("ADR-", {
       path: `Memory/Projects/${project}/Decisions/`,
-      limit: 50,
+      limit: 1000,
     });
 
     let maxNumber = 0;

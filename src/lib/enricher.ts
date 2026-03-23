@@ -62,10 +62,16 @@ export function buildEnrichmentPrompt(
   featureIndex: string,
   decisionIndex: string
 ): string {
-  return ENRICHMENT_PROMPT
-    .replace("{SESSION_CONTENT}", sessionContent)
-    .replace("{FEATURE_INDEX}", featureIndex || "_No features yet._")
-    .replace("{DECISION_INDEX}", decisionIndex || "_No decisions yet._");
+  const replacements: Record<string, string> = {
+    "{SESSION_CONTENT}": sessionContent,
+    "{FEATURE_INDEX}": featureIndex || "_No features yet._",
+    "{DECISION_INDEX}": decisionIndex || "_No decisions yet._",
+  };
+
+  return ENRICHMENT_PROMPT.replace(
+    /\{SESSION_CONTENT\}|\{FEATURE_INDEX\}|\{DECISION_INDEX\}/g,
+    (token) => replacements[token]
+  );
 }
 
 export async function enrichSession(

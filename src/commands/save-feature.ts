@@ -30,12 +30,22 @@ export async function runSaveFeature(
   const { vault, project } = found.config;
   const cli = new ObsidianCLI(vault);
 
-  const notePath = `Memory/Projects/${project}/Docs/Features/${options.slug}`;
+  // Sanitize slug: strip path separators and traversal sequences
+  const safeSlug = options.slug
+    .replace(/\.\./g, "")
+    .replace(/[/\\]/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  if (!safeSlug) {
+    throw new Error("Invalid feature slug: slug is empty after sanitization.");
+  }
+
+  const notePath = `Memory/Projects/${project}/Docs/Features/${safeSlug}`;
 
   const lines: string[] = [];
   lines.push("---");
   lines.push("type: feature");
-  lines.push(`slug: ${options.slug}`);
+  lines.push(`slug: ${safeSlug}`);
   lines.push(`project: ${project}`);
   lines.push(`status: ${options.status}`);
   lines.push(`created: ${new Date().toISOString().split("T")[0]}`);
@@ -69,5 +79,5 @@ export async function runSaveFeature(
     silent: true,
   });
 
-  return { notePath, slug: options.slug };
+  return { notePath, slug: safeSlug };
 }

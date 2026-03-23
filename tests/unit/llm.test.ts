@@ -21,6 +21,8 @@ describe("callLLM", () => {
   });
 
   test("throws when custom API key env var is missing", async () => {
+    delete process.env.MY_CUSTOM_KEY;
+
     await expect(
       callLLM("test prompt", {
         provider: "gemini",

@@ -144,7 +144,7 @@ async function findSessionsToEnrich(
   }
 
   const results = await cli.search(project, {
-    path: "Memory/Sessions/",
+    path: `Memory/Sessions/${project}/`,
     limit: 10,
   });
 
