@@ -23,16 +23,23 @@ At the very beginning of a session, before doing any work, run:
 obsidian-memory load-context
 ```
 
-This outputs:
-- **Project context** — tech stack, architecture, conventions
-- **Progress** — current state, recent session links
-- **Decisions** — the decision log (why things are the way they are)
-- **Conventions** — shared coding standards
-- **Recent sessions** — the last 3 session summaries from any agent
+By default, this outputs a compact view (**Tier 1 + Tier 2**):
+- **Project summary** — first paragraph from context.md
+- **Current state + blockers** — compact progress snapshot
+- **Continuity** — last session's summary and pending next steps
+- **Feature/decision/module indexes** — one line each
+- **Recent sessions** — one-line summaries (not full content)
+- **Conventions** — compact (truncated to 500 chars each)
 
-Read this output carefully. It contains decisions and context that should inform your work. If a previous session decided to use JWT auth, don't propose session cookies. If a convention says "use Zod for validation", follow it.
+Read this output carefully. It contains decisions and context that should inform your work.
 
-**Options:**
+**Tier options:**
+- `--minimal` — **Tier 1 only**: project summary, current state, blockers, last session's next steps (~500 tokens). Use when context window is tight.
+- `--focus <keyword>` — **Tier 1 + keyword-filtered content**: loads full content for notes matching the keyword, compact indexes for everything else. Use when working on a specific area (e.g., `--focus "auth"`).
+- `--full` — **Everything**: full project context, full progress, full session notes, full module docs. This is the original behavior before tiered loading was added.
+- *(no flag)* — **Default (Tier 1 + Tier 2)**: compact but comprehensive. Good for most sessions.
+
+**Filter options (work with all tiers):**
 - `--no-conventions` — skip conventions section
 - `--no-decisions` — skip decisions section
 - `--sessions <n>` — change number of recent sessions (default: 3)
