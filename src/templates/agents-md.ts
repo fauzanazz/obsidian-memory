@@ -128,7 +128,7 @@ to the right file instead of exploring blindly.
 ### After Implementing
 
 Update the relevant documentation:
-- Add new features to the Features inventory
+- **Save new features**: \`obsidian-memory save-feature --slug my-feature --title "My Feature" --summary "What it does"\`
 - Update module descriptions if you changed a module's purpose
 - Add patterns or gotchas to Conventions
 - Update Architecture if you changed the system structure
@@ -155,6 +155,7 @@ The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obs
 | \`obsidian-memory status\` | Check system health |
 | \`obsidian-memory load-context\` | Load project context |
 | \`obsidian-memory save-session\` | Save a session summary |
+| \`obsidian-memory save-feature\` | Save a feature note |
 | \`obsidian-memory search <query>\` | Search memory vault |
 | \`obsidian-memory consolidate\` | Merge old sessions |
 | \`obsidian-memory document\` | Scan project and generate docs |
