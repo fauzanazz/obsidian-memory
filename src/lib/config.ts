@@ -1,10 +1,17 @@
 import { join, dirname } from "path";
 
+export interface LLMConfig {
+  provider: "gemini" | "anthropic" | "openai";
+  model: string;
+  apiKeyEnv: string;
+}
+
 export interface MemoryConfig {
   vault: string;
   project: string;
   agents: string[];
   vaultPath?: string;
+  llm?: LLMConfig;
 }
 
 const CONFIG_FILENAME = ".obsidian-memory.json";
