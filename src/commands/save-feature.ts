@@ -92,6 +92,15 @@ export async function runSaveFeature(
   return { notePath, slug: safeSlug };
   const date = new Date().toISOString().split("T")[0];
 
+  // Sanitize slug to prevent path traversal
+  const safeSlug = options.slug
+    .replace(/[\/\\]/g, "-")
+    .replace(/\.\./g, "")
+    .replace(/^-+|-+$/g, "");
+  if (!safeSlug) {
+    throw new Error("Invalid slug: must contain at least one valid character.");
+  }
+
   // Parse keyFiles from "path:role" strings
   const keyFiles = options.keyFiles?.map((entry) => {
     const colonIdx = entry.indexOf(":");
@@ -108,7 +117,7 @@ export async function runSaveFeature(
 
   const content = featureNote({
     project,
-    slug: options.slug,
+    slug: safeSlug,
     title: options.title,
     date,
     status,
@@ -120,7 +129,7 @@ export async function runSaveFeature(
     limitations: options.limitations,
   });
 
-  const notePath = `Memory/Projects/${project}/Features/${options.slug}`;
+  const notePath = `Memory/Projects/${project}/Features/${safeSlug}`;
 
   await cli.create({
     name: notePath,
@@ -133,7 +142,7 @@ export async function runSaveFeature(
   const summaryLine = options.summary
     ? truncate(options.summary, 80)
     : "No summary";
-  const indexLine = `\n- [[Features/${options.slug}|${options.title}]] — ${status} — ${summaryLine}\n`;
+  const indexLine = `\n- [[Features/${safeSlug}|${options.title}]] — ${status} — ${summaryLine}\n`;
 
   try {
     await cli.prepend({

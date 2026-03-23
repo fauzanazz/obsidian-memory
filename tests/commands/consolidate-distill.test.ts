@@ -90,6 +90,14 @@ describe("consolidate --distill", () => {
     expect(result.message).toContain("Consolidated");
   });
 
+  test("falls back to --auto when API key missing even without explicit auto flag", async () => {
+    delete process.env.GEMINI_API_KEY;
+    setupMockSpawn();
+    const result = await runConsolidate(tempDir, { daysThreshold: 1, distill: true });
+    expect(mockDistillSessions).not.toHaveBeenCalled();
+    expect(result.message).toContain("Consolidated");
+  });
+
   test("tags sessions with archived: true", async () => {
     process.env.GEMINI_API_KEY = "test-key";
     const archivedContents: string[] = [];

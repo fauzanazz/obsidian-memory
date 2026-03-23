@@ -87,6 +87,8 @@ export async function runConsolidate(
       console.log(
         `[consolidate] LLM key (${apiKeyEnv}) not set, falling back to summary-only mode.`
       );
+      // Force auto mode so the fallback path actually executes
+      options = { ...options, auto: true };
       // Fall through to existing --auto behavior below
     } else {
       // Load canonical docs for context
@@ -315,7 +317,7 @@ async function applyContextUpdates(
         path: `Memory/Projects/${project}/progress.md`,
       });
       const updated = progress.replace(
-        /## Current State\n[\s\S]*?(?=\n## )/,
+        /## Current State\n[\s\S]*?(?=\n## |$)/,
         `## Current State\n${updates.currentState}\n\n`
       );
       await cli.create({
@@ -335,13 +337,13 @@ async function applyContextUpdates(
       });
       if (updates.techStack) {
         context = context.replace(
-          /## Tech Stack\n[\s\S]*?(?=\n## )/,
+          /## Tech Stack\n[\s\S]*?(?=\n## |$)/,
           `## Tech Stack\n${updates.techStack}\n\n`
         );
       }
       if (updates.architecture) {
         context = context.replace(
-          /## Architecture\n[\s\S]*?(?=\n## )/,
+          /## Architecture\n[\s\S]*?(?=\n## |$)/,
           `## Architecture\n${updates.architecture}\n\n`
         );
       }
