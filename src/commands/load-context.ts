@@ -302,6 +302,8 @@ async function loadFull(
       for (const result of results) {
         try {
           const content = await cli.read({ path: result.path });
+          // Skip archived sessions (distilled into journal entries)
+          if (content.includes("archived: true")) continue;
           sessionContent.push(content);
         } catch {}
       }

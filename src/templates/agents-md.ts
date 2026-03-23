@@ -90,10 +90,16 @@ when it runs \`obsidian-memory load-context\`.
 If the vault has many old session notes, suggest running:
 
 \`\`\`bash
+# LLM-powered distillation (recommended — produces rich journals + updates canonical docs)
+obsidian-memory consolidate --distill
+
+# Simple summary-only mode (no LLM required)
 obsidian-memory consolidate --auto
 \`\`\`
 
-This merges sessions older than 30 days into monthly journal entries, keeping the vault lean.
+Distillation reads old sessions, synthesizes themes and patterns, updates project context
+and progress, creates missing feature/decision notes, and archives the original sessions.
+Requires a \`GEMINI_API_KEY\` environment variable.
 
 ---
 

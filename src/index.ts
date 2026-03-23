@@ -238,12 +238,14 @@ program
   .command("consolidate")
   .description("Merge stale or overlapping memory notes")
   .option("--days <n>", "Consolidate sessions older than N days", "30")
-  .option("--auto", "Auto-merge without confirmation")
+  .option("--auto", "Auto-merge without confirmation (summary-only)")
+  .option("--distill", "Use LLM to distill sessions into enriched journal entries and update canonical docs")
   .action(async (opts) => {
     try {
       const result = await runConsolidate(process.cwd(), {
         daysThreshold: parseInt(opts.days, 10),
-        auto: opts.auto,
+        auto: opts.auto || opts.distill,
+        distill: opts.distill,
       });
       console.log(result.message);
     } catch (e: any) {

@@ -175,6 +175,72 @@ export function featureNote(options: FeatureNoteOptions): string {
   return lines.join("\n");
 }
 
+export interface JournalNoteOptions {
+  project: string;
+  period: string;
+  themes: string[];
+  accomplishments: string;
+  decisionsSummary: string;
+  patternsObserved: string;
+  outstandingBlockers: string[];
+  weeklyBreakdown: Array<{
+    week: string;
+    highlights: string[];
+  }>;
+  sessionsArchived: number;
+}
+
+export function journalNote(options: JournalNoteOptions): string {
+  const lines: string[] = [];
+
+  lines.push("---");
+  lines.push("type: journal");
+  lines.push(`project: ${options.project}`);
+  lines.push(`period: ${options.period}`);
+  lines.push(`created: ${new Date().toISOString().split("T")[0]}`);
+  lines.push("method: distillation");
+  lines.push("tags:");
+  lines.push("  - journal");
+  lines.push(`  - project/${options.project}`);
+  lines.push("---");
+  lines.push("");
+  lines.push(`# Journal — ${options.period} — ${options.project}`);
+  lines.push("");
+  lines.push(`> Distilled from ${options.sessionsArchived} session(s).`);
+  lines.push("");
+
+  lines.push("## Themes");
+  for (const t of options.themes) lines.push(`- ${t}`);
+  lines.push("");
+
+  lines.push("## Accomplishments");
+  lines.push(options.accomplishments);
+  lines.push("");
+
+  lines.push("## Weekly Breakdown");
+  for (const week of options.weeklyBreakdown) {
+    lines.push(`### ${week.week}`);
+    for (const h of week.highlights) lines.push(`- ${h}`);
+    lines.push("");
+  }
+
+  lines.push("## Decisions Summary");
+  lines.push(options.decisionsSummary);
+  lines.push("");
+
+  lines.push("## Patterns & Conventions");
+  lines.push(options.patternsObserved);
+  lines.push("");
+
+  if (options.outstandingBlockers.length > 0) {
+    lines.push("## Outstanding Blockers");
+    for (const b of options.outstandingBlockers) lines.push(`- ${b}`);
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
 export function decisionNote(options: {
   project: string;
   date: string;
