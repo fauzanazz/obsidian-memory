@@ -9,5 +9,6 @@
   { "name": "graceful-degradation", "description": "Task tier falls back to default when no GEMINI_API_KEY", "passes": true },
   { "name": "tests-load-context-task", "description": "Tests for load-context --task tier", "passes": true },
   { "name": "tests-timeline", "description": "Tests for timeline command", "passes": true },
-  { "name": "tests-query", "description": "Tests for query command", "passes": true }
+  { "name": "tests-query", "description": "Tests for query command", "passes": true },
+  { "name": "review-fixes", "description": "Address all 14 review violations from cubic-dev-ai", "passes": true }
 ]

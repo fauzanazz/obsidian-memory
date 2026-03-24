@@ -1,39 +1,41 @@
 # Progress — FAU-60: Task-Aware Context Loading + Temporal Query Commands
 
-## Status: Complete
+## Status: Complete (review fixes applied)
 
-All 11 features implemented and tested. TypeScript type-check passes. 52 new tests across 5 files, all passing.
+All 12 features implemented, tested, and review feedback addressed. TypeScript type-check passes.
 
 ## What was accomplished
 
-### New library files (dependencies that didn't exist from waves FAU-57/58/59)
-- `src/lib/event-extractor.ts` — JSONL event file reader with date filtering, keyword search, markdown formatting, and append capability
-- `src/lib/embeddings.ts` — Vector search via Gemini embedding API with cosine similarity, plus reciprocal rank fusion for combining keyword + vector results
-- `src/lib/config.ts` — Added `resolveVaultPath()` utility shared by all new commands
+### Review fixes (revision session)
+Addressed all 14 review violations from cubic-dev-ai:
 
-### New commands
-- `src/commands/timeline.ts` — `obsidian-memory timeline` with `--last`, `--since`, `--until`, `--project`, `--limit` flags
-- `src/commands/query.ts` — `obsidian-memory query <text>` with `--since`, `--until`, `--limit` flags; searches events + retrieves linked sessions via hybrid search
+**Source fixes:**
+- `embeddings.ts`: Return empty index on corrupt JSON instead of throwing (P2)
+- `config.ts`: Return null early when HOME env is unset (P2)
+- `timeline.ts`: Fix setMonth overflow by setting day to 1 first; validate limit with explicit numeric check (P2)
+- `query.ts`: Scope vector result filter to `Sessions/${project}/`; add keyword-only fallback on vector failure (P2)
+- `load-context.ts`: Decouple vector/keyword into separate try blocks; filter vector results to session paths (P2)
+- `index.ts`: Add `parsePositiveInt` helper for --limit validation (P2)
+- `docs/designs/task-aware-context-timeline.md`: Updated design doc to match source fixes
 
-### Modified files
-- `src/commands/load-context.ts` — Added `"task"` tier with LLM retrieval guidance → hybrid search → event/session assembly. Falls back to default tier without GEMINI_API_KEY
-- `src/index.ts` — Added `--task <description>` flag to load-context, wired timeline and query commands
+**Test fixes:**
+- Fixed event path mismatch (`Memory/Events/` → `Memory/Projects/{project}/events.jsonl`)
+- Fixed test data to use proper `ProjectEvent` shape
+- Fixed flaky date assertions using time-window approach
+- Fixed env restore with `!== undefined` check; fixed task tier test to pass correct tier
+- Fixed misleading test name; updated embeddings test for graceful degradation
 
-### Tests
-- `tests/unit/event-extractor.test.ts` — 17 tests
-- `tests/unit/embeddings.test.ts` — 5 tests
-- `tests/commands/timeline.test.ts` — 9 tests
-- `tests/commands/query.test.ts` — 5 tests
-- `tests/commands/load-context.test.ts` — 2 new tests (task tier fallback)
+### Previous session (initial implementation)
+- `src/lib/event-extractor.ts` — JSONL event reader with date filtering, keyword search, formatting
+- `src/lib/embeddings.ts` — Vector search via Gemini embedding API with cosine similarity + RRF
+- `src/lib/config.ts` — Added `resolveVaultPath()` shared utility
+- `src/commands/timeline.ts` — timeline with --last, --since, --until, --project, --limit
+- `src/commands/query.ts` — query with --since, --until, --limit; hybrid search
+- `src/commands/load-context.ts` — Added "task" tier with LLM retrieval guidance
+- `src/index.ts` — Wired --task flag, timeline, and query commands
 
-## Decisions made
-- Created `event-extractor.ts` and `embeddings.ts` from scratch since they were assumed to exist from prior waves (FAU-57/58/59) but weren't present on this branch
-- Added `resolveVaultPath` to `config.ts` as a shared utility rather than duplicating it in each command file
-- Used `LoadContextDefaults` type alias to avoid type conflicts after adding `taskDescription` to `LoadContextOptions`
+## Test results
+- 343 pass, 7 fail (all pre-existing in llm.test.ts and maintain.test.ts)
 
 ## What's left
-- Nothing — all design document requirements are implemented and tested
-
-## Pre-existing test failures (not introduced by this work)
-- `tests/unit/llm.test.ts` — 4 failures (callLLMJson mock issues)
-- `tests/commands/maintain.test.ts` — 3 failures (enrichment.features undefined)
+Nothing — all design requirements implemented and review feedback addressed.
