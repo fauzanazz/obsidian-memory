@@ -4,8 +4,9 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import { basename } from "path";
 import { runStatus, formatStatus } from "./commands/status";
-import { runLoadContext } from "./commands/load-context";
+import { runLoadContext, type LoadContextTier } from "./commands/load-context";
 import { runSaveSession } from "./commands/save-session";
+import { runSaveFeature } from "./commands/save-feature";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
 import { runDocument, formatDocumentResult } from "./commands/document";
@@ -128,12 +129,22 @@ program
 program
   .command("load-context")
   .description("Load project context from the memory vault")
+  .option("--minimal", "Tier 1 only: project summary, current state, blockers (~500 tokens)")
+  .option("--focus <keyword>", "Load full content for notes matching keyword, compact for the rest")
+  .option("--full", "Load everything (backwards compatible, original behavior)")
   .option("--no-conventions", "Exclude conventions")
   .option("--no-decisions", "Exclude decisions")
   .option("--sessions <n>", "Number of recent sessions to include", "3")
   .action(async (opts) => {
     try {
+      let tier: LoadContextTier = "default";
+      if (opts.minimal) tier = "minimal";
+      else if (opts.focus) tier = "focus";
+      else if (opts.full) tier = "full";
+
       const output = await runLoadContext(process.cwd(), {
+        tier,
+        focus: opts.focus,
         includeConventions: opts.conventions !== false,
         includeDecisions: opts.decisions !== false,
         includeSessions: parseInt(opts.sessions, 10),
@@ -165,6 +176,40 @@ program
         nextSteps: opts.next,
       });
       console.log(`Session saved: ${noteName}`);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("save-feature")
+  .description("Create or update a feature note in the memory vault")
+  .requiredOption("--slug <slug>", "Feature identifier in kebab-case (e.g., auth-jwt)")
+  .requiredOption("--title <title>", "Human-readable feature name")
+  .option("--status <status>", "Feature status (draft, in-progress, completed, deprecated)", "in-progress")
+  .option("--categories <items...>", "Feature categories/domains")
+  .option("--decided-by <items...>", "ADR slugs that shaped this feature")
+  .option("--sessions <items...>", "Session note names related to this feature")
+  .option("--summary <text>", "One-paragraph feature summary")
+  .option("--key-files <items...>", 'Key files in path:role format (e.g., src/auth.ts:JWT signing)')
+  .option("--limitations <items...>", "Known limitations")
+  .option("--overwrite", "Overwrite existing feature note")
+  .action(async (opts) => {
+    try {
+      const notePath = await runSaveFeature(process.cwd(), {
+        slug: opts.slug,
+        title: opts.title,
+        status: opts.status,
+        categories: opts.categories,
+        decidedBy: opts.decidedBy,
+        sessions: opts.sessions,
+        summary: opts.summary,
+        keyFiles: opts.keyFiles,
+        limitations: opts.limitations,
+        overwrite: opts.overwrite,
+      });
+      console.log(`Feature note saved: ${notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
