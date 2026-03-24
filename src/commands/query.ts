@@ -64,13 +64,20 @@ export async function runQuery(
       });
       const fused = reciprocalRankFusion(
         keywordResults.map((r) => r.path),
-        vectorResults.filter((r) => r.path.includes("Sessions/")),
+        vectorResults.filter((r) => r.path.includes(`Sessions/${project}/`)),
       );
       for (const result of fused.slice(0, 3)) {
         sessionPaths.add(result.path);
       }
     } catch {
-      // Fall through to keyword-only
+      // Vector or fusion failed — fall back to keyword-only
+      try {
+        const results = await cli.search(queryText, {
+          path: `Memory/Sessions/${project}/`,
+          limit: 5,
+        });
+        for (const r of results) sessionPaths.add(r.path);
+      } catch {}
     }
   } else {
     // Keyword-only fallback

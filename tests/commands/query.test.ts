@@ -30,7 +30,7 @@ describe("query command", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "obsidian-memory-test-"));
     vaultPath = join(tempDir, "vault");
-    await mkdir(join(vaultPath, "Memory", "Events"), { recursive: true });
+    await mkdir(join(vaultPath, "Memory", "Projects", "my-app"), { recursive: true });
     await writeFile(join(vaultPath, "Memory", "Index.md"), "# Index\n");
 
     await writeConfig(tempDir, {
@@ -62,12 +62,12 @@ describe("query command", () => {
   test("searches events and returns formatted results", async () => {
     const today = new Date().toISOString().split("T")[0];
     const events = [
-      { date: today, type: "feature", summary: "Added authentication module", tags: ["auth"] },
-      { date: today, type: "bugfix", summary: "Fixed auth token expiry", source: "Memory/Sessions/my-app/session1.md" },
-      { date: today, type: "refactor", summary: "Improved database queries" },
+      { date: today, subject: "authentication module", action: "implemented", object: "for user login", files: ["src/auth.ts"], aliases: ["auth setup"], source: "", extracted_at: "" },
+      { date: today, subject: "auth token expiry", action: "fixed", object: "in middleware", files: ["src/middleware.ts"], aliases: ["token fix"], source: "Memory/Sessions/my-app/session1.md", extracted_at: "" },
+      { date: today, subject: "database queries", action: "improved", object: "for performance", files: ["src/db.ts"], aliases: ["query optimization"], source: "", extracted_at: "" },
     ];
     await writeFile(
-      join(vaultPath, "Memory", "Events", "my-app.jsonl"),
+      join(vaultPath, "Memory", "Projects", "my-app", "events.jsonl"),
       events.map((e) => JSON.stringify(e)).join("\n") + "\n",
     );
 
@@ -91,8 +91,8 @@ describe("query command", () => {
     const output = await runQuery(tempDir, "auth", {});
     expect(output).toContain('Query: "auth"');
     expect(output).toContain("Matching Events");
-    expect(output).toContain("Added authentication module");
-    expect(output).toContain("Fixed auth token expiry");
+    expect(output).toContain("authentication module");
+    expect(output).toContain("auth token expiry");
     // Should NOT include database query event (doesn't match "auth")
     expect(output).not.toContain("database queries");
   });
@@ -102,13 +102,17 @@ describe("query command", () => {
     const events = [
       {
         date: today,
-        type: "feature",
-        summary: "Added auth",
+        subject: "auth system",
+        action: "implemented",
+        object: "with JWT",
+        files: ["src/auth.ts"],
+        aliases: ["authentication"],
         source: "Memory/Sessions/my-app/2026-03-25-claude-code-abc123.md",
+        extracted_at: "",
       },
     ];
     await writeFile(
-      join(vaultPath, "Memory", "Events", "my-app.jsonl"),
+      join(vaultPath, "Memory", "Projects", "my-app", "events.jsonl"),
       events.map((e) => JSON.stringify(e)).join("\n") + "\n",
     );
 
@@ -134,13 +138,13 @@ describe("query command", () => {
     expect(output).toContain("Implemented JWT auth");
   });
 
-  test("filters events by --since and --until", async () => {
+  test("filters events by --since", async () => {
     const events = [
-      { date: "2026-03-20", type: "feature", summary: "Old auth change" },
-      { date: "2026-03-25", type: "feature", summary: "New auth change" },
+      { date: "2026-03-20", subject: "auth", action: "changed", object: "old version", files: [], aliases: ["old auth change"], source: "", extracted_at: "" },
+      { date: "2026-03-25", subject: "auth", action: "changed", object: "new version", files: [], aliases: ["new auth change"], source: "", extracted_at: "" },
     ];
     await writeFile(
-      join(vaultPath, "Memory", "Events", "my-app.jsonl"),
+      join(vaultPath, "Memory", "Projects", "my-app", "events.jsonl"),
       events.map((e) => JSON.stringify(e)).join("\n") + "\n",
     );
 
@@ -150,8 +154,8 @@ describe("query command", () => {
     };
 
     const output = await runQuery(tempDir, "auth", { since: "2026-03-24" });
-    expect(output).toContain("New auth change");
-    expect(output).not.toContain("Old auth change");
+    expect(output).toContain("new version");
+    expect(output).not.toContain("old version");
   });
 
   test("throws when no config found", async () => {

@@ -136,20 +136,23 @@ async function loadTaskAware(
   const sessionPaths = new Set<string>();
 
   for (const query of searchQueries) {
+    // Decouple vector and keyword search so one failure doesn't block the other
+    let vectorResults: VectorSearchResult[] = [];
     try {
-      // Vector search
-      const vectorResults = await vectorSearch(vaultPath, query, apiKey, 5);
+      vectorResults = await vectorSearch(vaultPath, query, apiKey, 5);
+    } catch {
+      // Vector search failed — continue with keyword only
+    }
 
-      // Keyword search via CLI
+    try {
       const keywordResults = await cli.search(query, {
         path: `Memory/Sessions/${project}/`,
         limit: 5,
       });
 
-      // Fuse
       const fused = reciprocalRankFusion(
         keywordResults.map((r) => r.path),
-        vectorResults,
+        vectorResults.filter((r) => r.path.includes(`Sessions/${project}/`)),
       );
 
       for (const result of fused.slice(0, 3)) {

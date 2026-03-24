@@ -20,7 +20,11 @@ export function parseDuration(duration: string): string {
   switch (unit) {
     case "d": now.setDate(now.getDate() - value); break;
     case "w": now.setDate(now.getDate() - value * 7); break;
-    case "m": now.setMonth(now.getMonth() - value); break;
+    case "m": {
+      now.setDate(1);
+      now.setMonth(now.getMonth() - value);
+      break;
+    }
   }
 
   return now.toISOString().split("T")[0];
@@ -52,6 +56,8 @@ export async function runTimeline(
     return `No events found for project "${project}"${rangeStr}. Events are extracted during save-session when GEMINI_API_KEY is set.`;
   }
 
-  const limited = options.limit ? events.slice(0, options.limit) : events;
+  const limited = (typeof options.limit === "number" && options.limit > 0)
+    ? events.slice(0, options.limit)
+    : events;
   return `# Timeline — ${project}\n\n${formatEventTimeline(limited)}`;
 }

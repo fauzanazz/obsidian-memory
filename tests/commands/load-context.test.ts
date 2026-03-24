@@ -519,7 +519,7 @@ describe("load-context command", () => {
       // Should NOT contain task context header (since it fell back)
       expect(output).not.toContain("## Task Context");
     } finally {
-      if (savedKey) process.env.GEMINI_API_KEY = savedKey;
+      if (savedKey !== undefined) process.env.GEMINI_API_KEY = savedKey;
     }
   });
 
@@ -529,7 +529,7 @@ describe("load-context command", () => {
 
     // tier=task but no taskDescription → goes through default path
     const output = await runLoadContext(tempDir, {
-      tier: "default",
+      tier: "task",
     });
     expect(output).toContain("Memory Context — my-app");
     expect(output).toContain("## Project");

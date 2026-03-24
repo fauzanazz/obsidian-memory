@@ -156,15 +156,15 @@ describe("index persistence", () => {
     expect(loaded.entries[0].embedding).toEqual([0.1, 0.2, 0.3]);
   });
 
-  test("loadIndex throws on corrupt JSON", async () => {
+  test("loadIndex returns empty index on corrupt JSON", async () => {
     const indexPath = getIndexPath(tempDir);
     const dir = join(tempDir, "Memory/.embeddings");
     await Bun.write(join(dir, ".gitkeep"), "");
     await Bun.write(indexPath, "not valid json{{{");
 
-    await expect(loadIndex(tempDir)).rejects.toThrow(
-      "Failed to parse embedding index",
-    );
+    const result = await loadIndex(tempDir);
+    expect(result.entries).toEqual([]);
+    expect(result.version).toBe(1);
   });
 
   test("loadIndex resets on version mismatch", async () => {

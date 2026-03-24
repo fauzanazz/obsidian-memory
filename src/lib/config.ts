@@ -50,10 +50,11 @@ export async function findConfig(
  * Checks explicit vaultPath first, then common locations.
  */
 export function resolveVaultPath(config: MemoryConfig): string | null {
+  const home = process.env.HOME;
   if (config.vaultPath) {
-    return config.vaultPath.replace(/^~/, process.env.HOME || "~");
+    return config.vaultPath.replace(/^~/, home || "~");
   }
-  const home = process.env.HOME || "~";
+  if (!home) return null;
   const candidates = [
     `${home}/Documents/${config.vault}`,
     `${home}/${config.vault}`,

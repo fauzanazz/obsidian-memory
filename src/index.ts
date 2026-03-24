@@ -17,6 +17,11 @@ import { runCreateNote } from "./commands/create-note";
 import { runTimeline } from "./commands/timeline";
 import { runQuery } from "./commands/query";
 
+function parsePositiveInt(value: string): number | undefined {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 const program = new Command();
 
 program
@@ -367,7 +372,7 @@ program
         since: opts.since,
         until: opts.until,
         project: opts.project,
-        limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+        limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
       });
       console.log(output);
     } catch (e: any) {
@@ -387,7 +392,7 @@ program
       const output = await runQuery(process.cwd(), text, {
         since: opts.since,
         until: opts.until,
-        limit: opts.limit ? parseInt(opts.limit, 10) : undefined,
+        limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
       });
       console.log(output);
     } catch (e: any) {
