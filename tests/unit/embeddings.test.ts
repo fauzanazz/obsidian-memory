@@ -14,6 +14,7 @@ import {
   updateIndex,
   addToIndex,
   vectorSearch,
+  detectHybridSearch,
 } from "../../src/lib/embeddings";
 
 // ---------------------------------------------------------------------------
@@ -153,6 +154,17 @@ describe("index persistence", () => {
     expect(loaded.entries).toHaveLength(1);
     expect(loaded.entries[0].path).toBe("note.md");
     expect(loaded.entries[0].embedding).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  test("loadIndex throws on corrupt JSON", async () => {
+    const indexPath = getIndexPath(tempDir);
+    const dir = join(tempDir, "Memory/.embeddings");
+    await Bun.write(join(dir, ".gitkeep"), "");
+    await Bun.write(indexPath, "not valid json{{{");
+
+    await expect(loadIndex(tempDir)).rejects.toThrow(
+      "Failed to parse embedding index",
+    );
   });
 
   test("loadIndex resets on version mismatch", async () => {
@@ -623,5 +635,31 @@ describe("vectorSearch", () => {
 
     const results = await vectorSearch(tempDir, "query", "test-key", 3);
     expect(results).toHaveLength(3);
+  });
+});
+
+describe("detectHybridSearch", () => {
+  let originalKey: string | undefined;
+
+  beforeEach(() => {
+    originalKey = process.env.GEMINI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (originalKey !== undefined) {
+      process.env.GEMINI_API_KEY = originalKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
+  test("returns true when GEMINI_API_KEY is set", () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    expect(detectHybridSearch()).toBe(true);
+  });
+
+  test("returns false when GEMINI_API_KEY is not set", () => {
+    delete process.env.GEMINI_API_KEY;
+    expect(detectHybridSearch()).toBe(false);
   });
 });
