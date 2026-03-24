@@ -1,5 +1,7 @@
 import type { LLMConfig } from "./config";
 
+export type { LLMConfig };
+
 export interface LLMResponse {
   text: string;
 }
@@ -65,5 +67,9 @@ export async function callLLMJson<T>(
   config?: LLMConfig
 ): Promise<T> {
   const response = await callLLM(prompt, config);
-  return JSON.parse(response.text) as T;
+  // Strip markdown fences if present
+  const cleaned = response.text
+    .replace(/^```(?:json)?\s*\n?/m, "")
+    .replace(/\n?```\s*$/m, "");
+  return JSON.parse(cleaned) as T;
 }
