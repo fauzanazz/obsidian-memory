@@ -1,8 +1,9 @@
 import { ObsidianCLI, type SearchResult } from "../lib/obsidian-cli";
 import { findConfig } from "../lib/config";
 import { distillSessions } from "../lib/distiller";
-import { journalNote, decisionNote } from "../templates/note-templates";
-import type { LLMConfig } from "../lib/llm";
+import { journalNote } from "../templates/note-templates";
+import { runSaveDecision } from "./save-decision";
+import { runSaveFeature } from "./save-feature";
 
 export interface ConsolidateOptions {
   daysThreshold?: number; // consolidate sessions older than N days (default 30)
@@ -78,17 +79,15 @@ export async function runConsolidate(
     };
   }
 
-  // LLM-powered distillation (new path)
+  // LLM-powered distillation
   if (options?.distill) {
-    const llmConfig: LLMConfig | undefined = (found.config as any).llm;
+    const llmConfig = found.config.llm;
     const apiKeyEnv = llmConfig?.apiKeyEnv ?? "GEMINI_API_KEY";
 
     if (!process.env[apiKeyEnv]) {
       console.log(
         `[consolidate] LLM key (${apiKeyEnv}) not set, falling back to summary-only mode.`
       );
-      // Force auto mode so the fallback path actually executes
-      options = { ...options, auto: true };
       // Fall through to existing --auto behavior below
     } else {
       // Load canonical docs for context
@@ -119,8 +118,6 @@ export async function runConsolidate(
         for (const session of sessions) {
           try {
             const content = await cli.read({ path: session.path });
-            // Skip already-archived sessions
-            if (content.includes("archived: true")) continue;
             const filename = session.path.split("/").pop() || "";
             const dateMatch = filename.match(/^(\d{4}-\d{2}-\d{2})/);
             sessionData.push({
@@ -174,56 +171,34 @@ export async function runConsolidate(
 
         // 2. Apply context updates
         if (distillation.contextUpdates) {
-          await applyContextUpdates(
-            cli,
-            project,
-            distillation.contextUpdates
-          );
+          await applyContextUpdates(cli, project, distillation.contextUpdates);
         }
 
-        // 3. Create new decision notes
+        // 3. Create new decisions via save-decision
         for (const decision of distillation.newDecisions) {
           try {
-            const date = new Date().toISOString().split("T")[0];
-            const slug = decision.title
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/(^-|-$)/g, "");
-            const content = decisionNote({
-              project,
-              date,
+            await runSaveDecision(cwd, {
               title: decision.title,
               context: decision.context,
               decision: decision.decision,
               consequences: decision.consequences,
             });
-            await cli.create({
-              name: `Memory/Projects/${project}/Decisions/${slug}`,
-              content,
-              silent: true,
-            });
           } catch {
-            // Decision may already exist
+            // Non-critical — log and continue
           }
         }
 
-        // 4. Create new feature notes
+        // 4. Create new features via save-feature
         for (const feature of distillation.newFeatures) {
           try {
-            const content = featureNote({
-              project,
+            await runSaveFeature(cwd, {
               slug: feature.slug,
               title: feature.title,
               summary: feature.summary,
               status: feature.status,
             });
-            await cli.create({
-              name: `Memory/Projects/${project}/Docs/Features/${feature.slug}`,
-              content,
-              silent: true,
-            });
           } catch {
-            // Feature may already exist
+            // Non-critical — log and continue
           }
         }
 
@@ -242,7 +217,7 @@ export async function runConsolidate(
   }
 
   // If auto mode, merge sessions into monthly journal entries (lossy fallback)
-  if (options?.auto) {
+  if (options?.auto || options?.distill) {
     for (const [month, sessions] of grouped) {
       const summaries: string[] = [];
       for (const session of sessions) {
@@ -317,7 +292,7 @@ async function applyContextUpdates(
         path: `Memory/Projects/${project}/progress.md`,
       });
       const updated = progress.replace(
-        /## Current State\n[\s\S]*?(?=\n## |$)/,
+        /## Current State\n[\s\S]*?(?=\n## )/,
         `## Current State\n${updates.currentState}\n\n`
       );
       await cli.create({
@@ -337,13 +312,13 @@ async function applyContextUpdates(
       });
       if (updates.techStack) {
         context = context.replace(
-          /## Tech Stack\n[\s\S]*?(?=\n## |$)/,
+          /## Tech Stack\n[\s\S]*?(?=\n## )/,
           `## Tech Stack\n${updates.techStack}\n\n`
         );
       }
       if (updates.architecture) {
         context = context.replace(
-          /## Architecture\n[\s\S]*?(?=\n## |$)/,
+          /## Architecture\n[\s\S]*?(?=\n## )/,
           `## Architecture\n${updates.architecture}\n\n`
         );
       }
@@ -375,28 +350,4 @@ async function archiveSession(
     content: updated,
     overwrite: true,
   });
-}
-
-function featureNote(options: {
-  project: string;
-  slug: string;
-  title: string;
-  summary: string;
-  status: string;
-}): string {
-  const date = new Date().toISOString().split("T")[0];
-  return `---
-type: feature
-project: ${options.project}
-created: ${date}
-status: ${options.status}
-tags:
-  - feature
-  - project/${options.project}
----
-
-# ${options.title}
-
-${options.summary}
-`;
 }
