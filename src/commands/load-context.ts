@@ -1,17 +1,23 @@
 import { ObsidianCLI } from "../lib/obsidian-cli";
-import { findConfig } from "../lib/config";
+import { findConfig, resolveVaultPath } from "../lib/config";
+import { callLLMJson } from "../lib/llm";
+import { vectorSearch, reciprocalRankFusion } from "../lib/embeddings";
+import { readEvents, searchEvents, formatEventTimeline } from "../lib/event-extractor";
 
-export type LoadContextTier = "minimal" | "default" | "focus" | "full";
+export type LoadContextTier = "minimal" | "default" | "focus" | "full" | "task";
 
 export interface LoadContextOptions {
   tier?: LoadContextTier;
   focus?: string;
+  taskDescription?: string;
   includeConventions?: boolean;
   includeDecisions?: boolean;
   includeSessions?: number;
 }
 
-const DEFAULTS: Required<Omit<LoadContextOptions, "focus">> = {
+type LoadContextDefaults = Required<Omit<LoadContextOptions, "focus" | "taskDescription">>;
+
+const DEFAULTS: LoadContextDefaults = {
   tier: "default",
   includeConventions: true,
   includeDecisions: true,
@@ -40,6 +46,18 @@ export async function runLoadContext(
   await loadTier1(cli, project, sections);
 
   if (opts.tier === "minimal") {
+    return formatOutput(project, sections);
+  }
+
+  // Task-aware tier: dynamic retrieval guided by task description
+  if (opts.tier === "task" && opts.taskDescription) {
+    const vaultPath = resolveVaultPath(found.config);
+    if (vaultPath) {
+      await loadTaskAware(cli, project, vaultPath, opts.taskDescription, sections, opts);
+    } else {
+      // Can't resolve vault path — fall back to default tier
+      await loadTier2(cli, project, sections, opts);
+    }
     return formatOutput(project, sections);
   }
 
@@ -125,7 +143,7 @@ async function loadTier2(
   cli: ObsidianCLI,
   project: string,
   sections: string[],
-  opts: Required<Omit<LoadContextOptions, "focus">>
+  opts: LoadContextDefaults
 ): Promise<void> {
   // Feature index (one-line per feature)
   try {
@@ -261,7 +279,7 @@ async function loadFull(
   cli: ObsidianCLI,
   project: string,
   sections: string[],
-  opts: Required<Omit<LoadContextOptions, "focus">>
+  opts: LoadContextDefaults
 ): Promise<void> {
   // Full project context (entire context.md)
   try {
@@ -322,6 +340,164 @@ async function loadFull(
       }
     } catch {}
   }
+}
+
+// ── Task-aware tier: dynamic retrieval guidance + hybrid search ──
+
+const RETRIEVAL_GUIDANCE_PROMPT = `You are a retrieval guidance generator for a coding project's memory system.
+
+Given a task description, generate search keywords and topics that should be used to find relevant context from the project's memory vault (session notes, decisions, events, documentation).
+
+## Task Description
+{TASK}
+
+---
+
+Return a JSON object:
+{
+  "keywords": ["3-5 specific search keywords/phrases relevant to this task"],
+  "topics": ["2-3 broader topic areas to search"],
+  "timeframe": "recent|all"
+}
+
+Rules:
+- Keywords should be concrete technical terms (function names, module names, patterns)
+- Topics should be broader domain areas (authentication, database, testing)
+- Return ONLY valid JSON, no markdown fences`;
+
+interface RetrievalGuidance {
+  keywords: string[];
+  topics: string[];
+  timeframe: "recent" | "all";
+}
+
+async function loadTaskAware(
+  cli: ObsidianCLI,
+  project: string,
+  vaultPath: string,
+  taskDescription: string,
+  sections: string[],
+  opts: LoadContextDefaults,
+): Promise<void> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    // Fallback to default tier
+    await loadTier2(cli, project, sections, opts);
+    return;
+  }
+
+  // Step 1: Generate retrieval guidance
+  let guidance: RetrievalGuidance;
+  try {
+    const prompt = RETRIEVAL_GUIDANCE_PROMPT.replace("{TASK}", taskDescription);
+    guidance = await callLLMJson<RetrievalGuidance>(prompt);
+  } catch {
+    // Fallback if LLM fails
+    guidance = {
+      keywords: taskDescription.split(/\s+/).slice(0, 5),
+      topics: [],
+      timeframe: "recent",
+    };
+  }
+
+  // Step 2: Search events by guided keywords
+  const allEvents = await readEvents(vaultPath, project, {
+    since: guidance.timeframe === "recent"
+      ? new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0]
+      : undefined,
+  });
+
+  const allQueryTerms = [...guidance.keywords, ...guidance.topics].join(" ");
+  const relevantEvents = searchEvents(allEvents, allQueryTerms);
+
+  if (relevantEvents.length > 0) {
+    const eventSection = formatEventTimeline(relevantEvents.slice(0, 10));
+    sections.push(`## Relevant Events\n\n${eventSection}`);
+  }
+
+  // Step 3: Hybrid search sessions using guided queries
+  const searchQueries = [taskDescription, ...guidance.keywords.slice(0, 2)];
+  const sessionPaths = new Set<string>();
+
+  for (const query of searchQueries) {
+    try {
+      // Vector search
+      const vectorResults = await vectorSearch(vaultPath, query, apiKey, 5);
+
+      // Keyword search via CLI
+      const keywordResults = await cli.search(query, {
+        path: `Memory/Sessions/${project}/`,
+        limit: 5,
+      });
+
+      // Fuse
+      const fused = reciprocalRankFusion(
+        keywordResults.map((r) => r.path),
+        vectorResults,
+      );
+
+      for (const result of fused.slice(0, 3)) {
+        sessionPaths.add(result.path);
+      }
+    } catch {
+      // Continue with other queries
+    }
+  }
+
+  // Also add sessions referenced by relevant events
+  for (const event of relevantEvents.slice(0, 5)) {
+    if (event.source) sessionPaths.add(event.source);
+  }
+
+  // Step 4: Load matched session content
+  if (sessionPaths.size > 0) {
+    const sessionSections: string[] = [];
+    for (const path of Array.from(sessionPaths).slice(0, 5)) {
+      try {
+        const content = await cli.read({ path });
+        const summary = extractSection(content, "Summary");
+        const decisions = extractSection(content, "Decisions Made");
+        const filename = path.split("/").pop() || "";
+
+        const parts: string[] = [`### ${filename}`];
+        if (summary) parts.push(summary.trim());
+        if (decisions) parts.push(`**Decisions:** ${decisions.trim()}`);
+        sessionSections.push(parts.join("\n"));
+      } catch {
+        // Skip unreadable sessions
+      }
+    }
+
+    if (sessionSections.length > 0) {
+      sections.push(
+        `## Relevant Sessions (${sessionSections.length} found)\n\n` +
+        sessionSections.join("\n\n---\n\n"),
+      );
+    }
+  }
+
+  // Step 5: Also load decisions (always useful context)
+  if (opts.includeDecisions) {
+    try {
+      const decisionsDoc = await cli.read({
+        path: `Memory/Projects/${project}/decisions.md`,
+      });
+      const adrLinks = decisionsDoc
+        .split("\n")
+        .filter((line) => /^\s*-\s*\[\[ADRs\/ADR-/.test(line))
+        .join("\n");
+      if (adrLinks) {
+        sections.push("## Decisions\n\n" + adrLinks);
+      }
+    } catch {
+      // optional
+    }
+  }
+
+  // Step 6: Add task framing at the beginning
+  sections.unshift(
+    `## Task Context\n\n**Task:** ${taskDescription}\n**Retrieval focus:** ${guidance.keywords.join(", ")}`,
+  );
 }
 
 // ── Helper functions ─────────────────────────────────────────
