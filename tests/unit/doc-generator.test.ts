@@ -91,16 +91,22 @@ describe("generateArchitecture", () => {
 });
 
 describe("generateFeatures", () => {
-  test("creates empty feature inventory", () => {
+  test("creates feature index with auto markers", () => {
     const content = generateFeatures("my-project");
     expect(content).toContain("# Features");
-    expect(content).toContain("Feature");
-    expect(content).toContain("Module");
+    expect(content).toContain("## Feature Index");
+    expect(content).toContain(AUTO_START("feature-index"));
+    expect(content).toContain(AUTO_END("feature-index"));
   });
 
   test("includes instructions for agents", () => {
     const content = generateFeatures("my-project");
     expect(content).toContain("Before creating new functionality");
+  });
+
+  test("includes save-feature instructions in auto section", () => {
+    const content = generateFeatures("my-project");
+    expect(content).toContain("save-feature");
   });
 });
 

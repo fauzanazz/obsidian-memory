@@ -30,6 +30,7 @@ export function getVaultStructure(project: string): VaultStructure {
     ...VAULT_FOLDERS,
     `Memory/Projects/${project}`,
     `Memory/Projects/${project}/Docs`,
+    `Memory/Projects/${project}/Features`,
     `Memory/Sessions/${project}`,
   ];
 
@@ -126,6 +127,31 @@ tags:
 
 ## Completed
 <!-- Recently completed items -->
+`,
+    },
+    {
+      path: `Memory/Projects/${project}/Docs/Features.md`,
+      content: `---
+type: documentation
+project: ${project}
+created: ${today()}
+updated: ${today()}
+tags:
+  - project/${project}
+  - documentation
+---
+
+# Features — ${project}
+
+> Before creating new functionality, search this index first.
+
+## Feature Index
+
+<!-- New features are automatically added here by save-feature -->
+
+---
+
+See also: [[Architecture]], [[Modules]], [[Conventions]]
 `,
     },
     {
