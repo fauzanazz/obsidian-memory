@@ -1,4 +1,5 @@
-import { join } from "path";
+import { join, dirname } from "path";
+import { appendFile, mkdir } from "fs/promises";
 import { callLLMJson } from "./llm";
 import type { LLMConfig } from "./config";
 
@@ -135,13 +136,8 @@ export async function appendEvents(
   const filePath = getEventsPath(vaultPath, project);
   const lines = events.map((e) => JSON.stringify(e)).join("\n") + "\n";
 
-  const file = Bun.file(filePath);
-  if (await file.exists()) {
-    const existing = await file.text();
-    await Bun.write(filePath, existing + lines);
-  } else {
-    await Bun.write(filePath, lines);
-  }
+  await mkdir(dirname(filePath), { recursive: true });
+  await appendFile(filePath, lines, "utf-8");
 }
 
 export async function readEvents(
