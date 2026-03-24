@@ -13,6 +13,7 @@ import { runDocument, formatDocumentResult } from "./commands/document";
 import { runSaveDecision } from "./commands/save-decision";
 import { runMaintain } from "./commands/maintain";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
+import { runCreateNote } from "./commands/create-note";
 
 const program = new Command();
 
@@ -318,6 +319,28 @@ program
         session: opts.session,
       });
       console.log(result.message);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("create-note")
+  .description("Create a note in the memory vault with specified path and content")
+  .requiredOption("--path <path>", "Vault-relative path for the note (e.g., Memory/Projects/my-app/Docs/ADR.md)")
+  .requiredOption("--content <markdown>", "Markdown content for the note")
+  .option("--vault <name>", "Obsidian vault name (defaults to config)")
+  .option("--overwrite", "Overwrite existing note")
+  .action(async (opts) => {
+    try {
+      const notePath = await runCreateNote(process.cwd(), {
+        path: opts.path,
+        content: opts.content,
+        vault: opts.vault,
+        overwrite: opts.overwrite,
+      });
+      console.log(`Note created: ${notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
