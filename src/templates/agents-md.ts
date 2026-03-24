@@ -135,6 +135,20 @@ Update the relevant documentation:
 
 ---
 
+## Automatic Enrichment
+
+After saving a session, you can run enrichment to automatically create feature notes,
+ADR notes, and cross-links from the session content:
+
+\`\`\`bash
+obsidian-memory maintain --enrich
+\`\`\`
+
+This uses an LLM to analyze the session and extract structured artifacts.
+Requires a \`GEMINI_API_KEY\` environment variable (or the key configured in \`.obsidian-memory.json\`).
+
+---
+
 ## Troubleshooting
 
 ### "Obsidian is not running"
@@ -159,6 +173,7 @@ The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obs
 | \`obsidian-memory search <query>\` | Search memory vault |
 | \`obsidian-memory consolidate\` | Merge old sessions |
 | \`obsidian-memory document\` | Scan project and generate docs |
+| \`obsidian-memory maintain --enrich\` | Auto-extract features, decisions, and cross-links from sessions |
 | \`obsidian-memory init\` | Set up a new project |
 `;
 }

@@ -10,6 +10,7 @@ import { runSaveFeature } from "./commands/save-feature";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
 import { runDocument, formatDocumentResult } from "./commands/document";
+import { runMaintain } from "./commands/maintain";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 
 const program = new Command();
@@ -261,6 +262,27 @@ program
         force: opts.force,
       });
       console.log(formatDocumentResult(result));
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("maintain")
+  .description("Run agentic maintenance on the memory vault")
+  .option(
+    "--enrich",
+    "Enrich unenriched sessions (extract features, decisions, cross-links)"
+  )
+  .option("--session <path>", "Specific session note path to enrich")
+  .action(async (opts) => {
+    try {
+      const result = await runMaintain(process.cwd(), {
+        enrich: opts.enrich,
+        session: opts.session,
+      });
+      console.log(result.message);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
