@@ -14,6 +14,7 @@ import {
   updateIndex,
   addToIndex,
   vectorSearch,
+  detectHybridSearch,
 } from "../../src/lib/embeddings";
 
 // ---------------------------------------------------------------------------
@@ -623,5 +624,27 @@ describe("vectorSearch", () => {
 
     const results = await vectorSearch(tempDir, "query", "test-key", 3);
     expect(results).toHaveLength(3);
+  });
+});
+
+describe("detectHybridSearch", () => {
+  const originalKey = process.env.GEMINI_API_KEY;
+
+  afterEach(() => {
+    if (originalKey) {
+      process.env.GEMINI_API_KEY = originalKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
+  test("returns true when GEMINI_API_KEY is set", () => {
+    process.env.GEMINI_API_KEY = "test-key";
+    expect(detectHybridSearch()).toBe(true);
+  });
+
+  test("returns false when GEMINI_API_KEY is not set", () => {
+    delete process.env.GEMINI_API_KEY;
+    expect(detectHybridSearch()).toBe(false);
   });
 });

@@ -1,8 +1,21 @@
 import { ObsidianCLI, type SearchResult } from "./obsidian-cli";
+import {
+  vectorSearch,
+  reciprocalRankFusion,
+  type VectorSearchResult,
+} from "./embeddings";
 
 export interface SearchProvider {
-  search(query: string, options?: { path?: string; limit?: number }): Promise<SearchResult[]>;
+  search(
+    query: string,
+    options?: { path?: string; limit?: number },
+  ): Promise<SearchResult[]>;
   name: string;
+}
+
+export interface HybridSearchResult extends SearchResult {
+  score?: number;
+  sources?: Array<"keyword" | "vector">;
 }
 
 export class ObsidianSearchProvider implements SearchProvider {
@@ -11,69 +24,79 @@ export class ObsidianSearchProvider implements SearchProvider {
 
   async search(
     query: string,
-    options?: { path?: string; limit?: number }
+    options?: { path?: string; limit?: number },
   ): Promise<SearchResult[]> {
     return this.cli.search(query, options);
   }
 }
 
-export class HybridSearchProvider implements SearchProvider {
-  readonly name = "obsidian-hybrid-search";
-  constructor(private vaultPath: string) {}
+/**
+ * Unified hybrid search provider.
+ * Combines Obsidian CLI keyword search with built-in vector search.
+ * Falls back to keyword-only if vector search is unavailable.
+ */
+export class UnifiedHybridProvider implements SearchProvider {
+  readonly name = "hybrid (keyword + vector)";
+
+  constructor(
+    private cli: ObsidianCLI,
+    private vaultPath: string,
+    private apiKey: string,
+  ) {}
 
   async search(
     query: string,
-    options?: { path?: string; limit?: number }
-  ): Promise<SearchResult[]> {
-    const args = [query];
-    if (options?.path) args.push("--scope", options.path);
+    options?: { path?: string; limit?: number },
+  ): Promise<HybridSearchResult[]> {
+    const limit = options?.limit ?? 10;
 
-    const proc = Bun.spawn(["obsidian-hybrid-search", ...args], {
-      cwd: this.vaultPath,
-      stdout: "pipe",
-      stderr: "pipe",
-      env: { ...process.env, OBSIDIAN_VAULT_PATH: this.vaultPath },
-    });
+    // Run keyword and vector search in parallel
+    const [keywordResults, vectorResults] = await Promise.all([
+      this.cli.search(query, options).catch(() => [] as SearchResult[]),
+      vectorSearch(this.vaultPath, query, this.apiKey, limit * 2).catch(
+        () => [] as VectorSearchResult[],
+      ),
+    ]);
 
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-
-    if (exitCode !== 0) {
-      throw new Error("obsidian-hybrid-search failed");
+    // Filter vector results by path prefix if specified
+    let filteredVector = vectorResults;
+    if (options?.path) {
+      filteredVector = vectorResults.filter((r) =>
+        r.path.startsWith(options.path!),
+      );
     }
 
-    // Parse the output — hybrid-search returns structured results
-    try {
-      return JSON.parse(stdout);
-    } catch {
-      // Fallback: treat each line as a path
-      return stdout
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => ({ path: line.trim(), matches: [] }));
-    }
+    // Fuse results
+    const fused = reciprocalRankFusion(
+      keywordResults.map((r) => r.path),
+      filteredVector,
+    );
+
+    // Convert to HybridSearchResult
+    return fused.slice(0, limit).map((f) => ({
+      path: f.path,
+      matches: keywordResults.find((k) => k.path === f.path)?.matches ?? [],
+      score: f.score,
+      sources: f.sources,
+    }));
   }
 }
 
-export async function detectHybridSearch(): Promise<boolean> {
-  try {
-    const proc = Bun.spawn(["which", "obsidian-hybrid-search"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    return (await proc.exited) === 0;
-  } catch {
-    return false;
-  }
-}
-
+/**
+ * Create the appropriate search provider based on available capabilities.
+ * Prefers hybrid when GEMINI_API_KEY is available, falls back to keyword-only.
+ */
 export async function createSearchProvider(
   cli: ObsidianCLI,
-  vaultPath?: string
+  vaultPath?: string,
 ): Promise<SearchProvider> {
-  if (vaultPath && (await detectHybridSearch())) {
-    return new HybridSearchProvider(vaultPath);
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (apiKey && vaultPath) {
+    return new UnifiedHybridProvider(cli, vaultPath, apiKey);
   }
+
   return new ObsidianSearchProvider(cli);
 }
+
+export { detectHybridSearch } from "./embeddings";

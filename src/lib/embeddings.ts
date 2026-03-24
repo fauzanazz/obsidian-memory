@@ -361,3 +361,7 @@ export function reciprocalRankFusion(
     }))
     .sort((a, b) => b.score - a.score);
 }
+
+export function detectHybridSearch(): boolean {
+  return !!process.env.GEMINI_API_KEY;
+}
