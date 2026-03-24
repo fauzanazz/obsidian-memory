@@ -197,8 +197,18 @@ describe("embedTexts", () => {
     expect(result).toEqual([]);
   });
 
-  test("calls Gemini batch API and returns embeddings", async () => {
+  test("returns empty array when API key is missing", async () => {
+    const result = await embedTexts(["hello"], "");
+    expect(result).toEqual([]);
+  });
+
+  test("calls Gemini batch API with x-goog-api-key header", async () => {
     globalThis.fetch = async (url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = url.toString();
+      expect(urlStr).not.toContain("key=");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("test-key");
+
       const body = JSON.parse(init?.body as string);
       expect(body.requests).toHaveLength(2);
       expect(body.requests[0].taskType).toBe("RETRIEVAL_DOCUMENT");
@@ -256,8 +266,18 @@ describe("embedQuery", () => {
     globalThis.fetch = originalFetch;
   });
 
-  test("calls Gemini single embed API with RETRIEVAL_QUERY", async () => {
+  test("returns empty array when API key is missing", async () => {
+    const result = await embedQuery("hello", "");
+    expect(result).toEqual([]);
+  });
+
+  test("calls Gemini single embed API with x-goog-api-key header", async () => {
     globalThis.fetch = async (_url: string | URL | Request, init?: RequestInit) => {
+      const urlStr = _url.toString();
+      expect(urlStr).not.toContain("key=");
+      const headers = init?.headers as Record<string, string>;
+      expect(headers["x-goog-api-key"]).toBe("test-key");
+
       const body = JSON.parse(init?.body as string);
       expect(body.taskType).toBe("RETRIEVAL_QUERY");
       expect(body.model).toBe("models/text-embedding-004");
@@ -308,6 +328,15 @@ describe("updateIndex", () => {
       return new Response(JSON.stringify({ embeddings }), { status: 200 });
     };
   }
+
+  test("returns 0 when API key is missing", async () => {
+    const count = await updateIndex(
+      tempDir,
+      [{ path: "a.md", content: "hello" }],
+      "",
+    );
+    expect(count).toBe(0);
+  });
 
   test("embeds new notes and returns count", async () => {
     mockEmbedAPI();
@@ -424,6 +453,12 @@ describe("addToIndex", () => {
       );
   }
 
+  test("returns without error when API key is missing", async () => {
+    await addToIndex(tempDir, { path: "a.md", content: "hello" }, "");
+    const index = await loadIndex(tempDir);
+    expect(index.entries).toHaveLength(0);
+  });
+
   test("adds new note to empty index", async () => {
     mockSingleEmbed();
 
@@ -486,6 +521,11 @@ describe("vectorSearch", () => {
   afterEach(async () => {
     globalThis.fetch = originalFetch;
     await rm(tempDir, { recursive: true });
+  });
+
+  test("returns empty when API key is missing", async () => {
+    const results = await vectorSearch(tempDir, "query", "");
+    expect(results).toEqual([]);
   });
 
   test("returns empty for empty index", async () => {

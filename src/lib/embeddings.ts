@@ -63,17 +63,21 @@ export async function embedTexts(
   apiKey: string,
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
+  if (!apiKey) return [];
 
   const results: number[][] = [];
 
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents`;
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify({
         requests: batch.map((text) => ({
           model: `models/${EMBEDDING_MODEL}`,
@@ -104,11 +108,16 @@ export async function embedQuery(
   text: string,
   apiKey: string,
 ): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${apiKey}`;
+  if (!apiKey) return [];
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       model: `models/${EMBEDDING_MODEL}`,
       content: { parts: [{ text }] },
@@ -183,6 +192,8 @@ export async function updateIndex(
   notes: NoteContent[],
   apiKey: string,
 ): Promise<number> {
+  if (!apiKey) return 0;
+
   const index = await loadIndex(vaultPath);
   const existingMap = new Map(index.entries.map((e) => [e.path, e]));
 
@@ -237,6 +248,8 @@ export async function addToIndex(
   note: NoteContent,
   apiKey: string,
 ): Promise<void> {
+  if (!apiKey) return;
+
   const index = await loadIndex(vaultPath);
   const hash = hashContent(note.content);
 
@@ -285,6 +298,8 @@ export async function vectorSearch(
   apiKey: string,
   topK: number = 10,
 ): Promise<VectorSearchResult[]> {
+  if (!apiKey) return [];
+
   const index = await loadIndex(vaultPath);
   if (index.entries.length === 0) return [];
 
