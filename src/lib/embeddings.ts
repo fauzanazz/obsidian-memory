@@ -164,9 +164,15 @@ export async function loadIndex(vaultPath: string): Promise<EmbeddingIndex> {
 
   let data: EmbeddingIndex;
   try {
-    data = (await file.json()) as EmbeddingIndex;
-  } catch {
-    return emptyIndex();
+    const text = await file.text();
+    data = JSON.parse(text) as EmbeddingIndex;
+  } catch (err) {
+    // Only treat JSON parse errors as recoverable (corrupt index).
+    // Propagate real I/O errors (permission denied, etc.).
+    if (err instanceof SyntaxError) {
+      return emptyIndex();
+    }
+    throw err;
   }
 
   if (data.version !== INDEX_VERSION) {

@@ -10,5 +10,6 @@
   { "name": "tests-load-context-task", "description": "Tests for load-context --task tier", "passes": true },
   { "name": "tests-timeline", "description": "Tests for timeline command", "passes": true },
   { "name": "tests-query", "description": "Tests for query command", "passes": true },
-  { "name": "review-fixes", "description": "Address all 14 review violations from cubic-dev-ai", "passes": true }
+  { "name": "review-fixes", "description": "Address all 14 review violations from cubic-dev-ai", "passes": true },
+  { "name": "review-fixes-round-2", "description": "Address 3 review violations from second cubic-dev-ai review", "passes": true }
 ]

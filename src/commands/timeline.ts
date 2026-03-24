@@ -21,8 +21,13 @@ export function parseDuration(duration: string): string {
     case "d": now.setDate(now.getDate() - value); break;
     case "w": now.setDate(now.getDate() - value * 7); break;
     case "m": {
-      now.setDate(1);
+      const day = now.getDate();
       now.setMonth(now.getMonth() - value);
+      // Clamp to last day of resulting month if overflow occurred
+      // (e.g., March 31 → setMonth to Feb → becomes March 3 → clamp to Feb 28)
+      if (now.getDate() !== day) {
+        now.setDate(0); // back to last day of previous month
+      }
       break;
     }
   }

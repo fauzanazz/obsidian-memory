@@ -6,39 +6,34 @@ import { join } from "path";
 import { tmpdir } from "os";
 
 describe("parseDuration", () => {
+  // Helper: compute expected date string using same UTC approach as parseDuration
+  function expectedDate(offsetDays: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() - offsetDays);
+    return d.toISOString().split("T")[0];
+  }
+
   test("parses days", () => {
-    const before = new Date();
     const result = parseDuration("7d");
-    const after = new Date();
-    before.setDate(before.getDate() - 7);
-    after.setDate(after.getDate() - 7);
-    const resultDate = new Date(result + "T12:00:00Z");
-    expect(resultDate.getTime()).toBeGreaterThanOrEqual(after.setHours(0, 0, 0, 0));
-    expect(resultDate.getTime()).toBeLessThanOrEqual(before.setHours(23, 59, 59, 999));
+    expect(result).toBe(expectedDate(7));
   });
 
   test("parses weeks", () => {
-    const before = new Date();
     const result = parseDuration("2w");
-    const after = new Date();
-    before.setDate(before.getDate() - 14);
-    after.setDate(after.getDate() - 14);
-    const resultDate = new Date(result + "T12:00:00Z");
-    expect(resultDate.getTime()).toBeGreaterThanOrEqual(after.setHours(0, 0, 0, 0));
-    expect(resultDate.getTime()).toBeLessThanOrEqual(before.setHours(23, 59, 59, 999));
+    expect(result).toBe(expectedDate(14));
   });
 
   test("parses months", () => {
-    const before = new Date();
     const result = parseDuration("1m");
-    const after = new Date();
-    before.setDate(1);
-    before.setMonth(before.getMonth() - 1);
-    after.setDate(1);
-    after.setMonth(after.getMonth() - 1);
-    const resultDate = new Date(result + "T12:00:00Z");
-    expect(resultDate.getTime()).toBeGreaterThanOrEqual(after.setHours(0, 0, 0, 0));
-    expect(resultDate.getTime()).toBeLessThanOrEqual(before.setHours(23, 59, 59, 999));
+    // Replicate the month subtraction logic to get expected value
+    const d = new Date();
+    const day = d.getDate();
+    d.setMonth(d.getMonth() - 1);
+    if (d.getDate() !== day) {
+      d.setDate(0); // clamp to last day of previous month
+    }
+    const expected = d.toISOString().split("T")[0];
+    expect(result).toBe(expected);
   });
 
   test("throws on invalid format", () => {
