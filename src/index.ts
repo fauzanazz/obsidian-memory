@@ -187,29 +187,23 @@ program
   .description("Create or update a feature note in the memory vault")
   .requiredOption("--slug <slug>", "Feature identifier in kebab-case (e.g., auth-jwt)")
   .requiredOption("--title <title>", "Human-readable feature name")
-  .option("--status <status>", "Feature status (draft, in-progress, completed, deprecated)", "in-progress")
+  .option("--status <status>", "Feature status (draft, in-progress, completed)", "in-progress")
   .option("--categories <items...>", "Feature categories/domains")
-  .option("--decided-by <items...>", "ADR slugs that shaped this feature")
   .option("--sessions <items...>", "Session note names related to this feature")
   .option("--summary <text>", "One-paragraph feature summary")
   .option("--key-files <items...>", 'Key files in path:role format (e.g., src/auth.ts:JWT signing)')
-  .option("--limitations <items...>", "Known limitations")
-  .option("--overwrite", "Overwrite existing feature note")
   .action(async (opts) => {
     try {
-      const notePath = await runSaveFeature(process.cwd(), {
+      const result = await runSaveFeature(process.cwd(), {
         slug: opts.slug,
         title: opts.title,
         status: opts.status,
-        categories: opts.categories,
-        decidedBy: opts.decidedBy,
-        sessions: opts.sessions,
-        summary: opts.summary,
-        keyFiles: opts.keyFiles,
-        limitations: opts.limitations,
-        overwrite: opts.overwrite,
+        categories: opts.categories || [],
+        sessions: opts.sessions || [],
+        summary: opts.summary || "",
+        keyFiles: opts.keyFiles || [],
       });
-      console.log(`Feature note saved: ${notePath}`);
+      console.log(`Feature note saved: ${result.notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
