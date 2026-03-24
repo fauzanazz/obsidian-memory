@@ -430,6 +430,31 @@ describe("updateIndex", () => {
     expect(index.entries).toHaveLength(1);
     expect(index.entries[0].path).toBe("a.md");
   });
+
+  test("prunes deleted notes even when API key is missing", async () => {
+    mockEmbedAPI();
+
+    await updateIndex(
+      tempDir,
+      [
+        { path: "a.md", content: "hello" },
+        { path: "b.md", content: "world" },
+      ],
+      "test-key",
+    );
+
+    // Prune with no API key — b.md should still be removed
+    const count = await updateIndex(
+      tempDir,
+      [{ path: "a.md", content: "hello" }],
+      "",
+    );
+
+    expect(count).toBe(0);
+    const index = await loadIndex(tempDir);
+    expect(index.entries).toHaveLength(1);
+    expect(index.entries[0].path).toBe("a.md");
+  });
 });
 
 describe("addToIndex", () => {

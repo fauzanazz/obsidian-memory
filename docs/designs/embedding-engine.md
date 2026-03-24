@@ -81,13 +81,14 @@ export function hashContent(content: string): string {
 /**
  * Embed one or more texts using Gemini text-embedding-004.
  * Returns an array of embedding vectors (768 dimensions each).
- * Throws if API key is missing or API call fails.
+ * Returns empty array when API key is missing (graceful degradation).
  */
 export async function embedTexts(
   texts: string[],
   apiKey: string,
 ): Promise<number[][]> {
   if (texts.length === 0) return [];
+  if (!apiKey) return [];
 
   const results: number[][] = [];
 
@@ -95,11 +96,14 @@ export async function embedTexts(
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents`;
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
       body: JSON.stringify({
         requests: batch.map((text) => ({
           model: `models/${EMBEDDING_MODEL}`,
@@ -128,16 +132,22 @@ export async function embedTexts(
 
 /**
  * Embed a single query text (uses RETRIEVAL_QUERY task type for better relevance).
+ * Returns empty array when API key is missing (graceful degradation).
  */
 export async function embedQuery(
   text: string,
   apiKey: string,
 ): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent?key=${apiKey}`;
+  if (!apiKey) return [];
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:embedContent`;
 
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": apiKey,
+    },
     body: JSON.stringify({
       model: `models/${EMBEDDING_MODEL}`,
       content: { parts: [{ text }] },
@@ -217,6 +227,7 @@ export interface NoteContent {
 /**
  * Update the embedding index with new/changed notes.
  * Returns the number of notes embedded.
+ * Always prunes deleted notes, even when API key is missing.
  */
 export async function updateIndex(
   vaultPath: string,
@@ -225,10 +236,21 @@ export async function updateIndex(
 ): Promise<number> {
   const index = await loadIndex(vaultPath);
   const existingMap = new Map(index.entries.map((e) => [e.path, e]));
+  const validPaths = new Set(notes.map((n) => n.path));
+
+  // Always prune deleted notes, even without an API key
+  const pruned = index.entries.length;
+  index.entries = index.entries.filter((e) => validPaths.has(e.path));
+  const prunedCount = pruned - index.entries.length;
+
+  // Without an API key we can only prune, not embed
+  if (!apiKey) {
+    if (prunedCount > 0) await saveIndex(vaultPath, index);
+    return 0;
+  }
 
   // Find notes that need (re-)embedding
   const toEmbed: NoteContent[] = [];
-  const validPaths = new Set(notes.map((n) => n.path));
 
   for (const note of notes) {
     const hash = hashContent(note.content);
@@ -240,9 +262,7 @@ export async function updateIndex(
   }
 
   if (toEmbed.length === 0) {
-    // Still prune deleted notes
-    index.entries = index.entries.filter((e) => validPaths.has(e.path));
-    await saveIndex(vaultPath, index);
+    if (prunedCount > 0) await saveIndex(vaultPath, index);
     return 0;
   }
 
@@ -267,7 +287,7 @@ export async function updateIndex(
     existingMap.set(note.path, entry);
   }
 
-  // Rebuild entries array (preserving existing, adding new, removing deleted)
+  // Rebuild from map (already pruned above, but filter again for safety)
   index.entries = Array.from(existingMap.values()).filter((e) =>
     validPaths.has(e.path),
   );
@@ -285,6 +305,8 @@ export async function addToIndex(
   note: NoteContent,
   apiKey: string,
 ): Promise<void> {
+  if (!apiKey) return;
+
   const index = await loadIndex(vaultPath);
   const hash = hashContent(note.content);
 
@@ -337,6 +359,8 @@ export async function vectorSearch(
   apiKey: string,
   topK: number = 10,
 ): Promise<VectorSearchResult[]> {
+  if (!apiKey) return [];
+
   const index = await loadIndex(vaultPath);
   if (index.entries.length === 0) return [];
 

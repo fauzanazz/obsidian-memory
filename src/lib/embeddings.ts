@@ -192,13 +192,23 @@ export async function updateIndex(
   notes: NoteContent[],
   apiKey: string,
 ): Promise<number> {
-  if (!apiKey) return 0;
-
   const index = await loadIndex(vaultPath);
   const existingMap = new Map(index.entries.map((e) => [e.path, e]));
-
-  const toEmbed: NoteContent[] = [];
   const validPaths = new Set(notes.map((n) => n.path));
+
+  // Always prune deleted notes, even without an API key
+  const pruned = index.entries.length;
+  index.entries = index.entries.filter((e) => validPaths.has(e.path));
+  const prunedCount = pruned - index.entries.length;
+
+  // Without an API key we can only prune, not embed
+  if (!apiKey) {
+    if (prunedCount > 0) await saveIndex(vaultPath, index);
+    return 0;
+  }
+
+  // Find notes that need (re-)embedding
+  const toEmbed: NoteContent[] = [];
 
   for (const note of notes) {
     const hash = hashContent(note.content);
@@ -210,9 +220,7 @@ export async function updateIndex(
   }
 
   if (toEmbed.length === 0) {
-    // Still prune deleted notes
-    index.entries = index.entries.filter((e) => validPaths.has(e.path));
-    await saveIndex(vaultPath, index);
+    if (prunedCount > 0) await saveIndex(vaultPath, index);
     return 0;
   }
 
@@ -235,6 +243,7 @@ export async function updateIndex(
     existingMap.set(note.path, entry);
   }
 
+  // Rebuild from map (already pruned above, but filter again for safety)
   index.entries = Array.from(existingMap.values()).filter((e) =>
     validPaths.has(e.path),
   );
