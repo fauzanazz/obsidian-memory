@@ -44,3 +44,30 @@ export async function findConfig(
 
   return null;
 }
+
+/**
+ * Resolve the filesystem path to the Obsidian vault.
+ * Checks explicit vaultPath first, then common locations.
+ */
+export function resolveVaultPath(config: MemoryConfig): string | null {
+  const home = process.env.HOME;
+  if (config.vaultPath) {
+    return config.vaultPath.replace(/^~/, home || "~");
+  }
+  if (!home) return null;
+  const candidates = [
+    `${home}/Documents/${config.vault}`,
+    `${home}/${config.vault}`,
+    `${home}/Obsidian/${config.vault}`,
+  ];
+  for (const candidate of candidates) {
+    try {
+      const file = Bun.file(join(candidate, "Memory", "Index.md"));
+      // Synchronous size check — returns 0 for non-existent files
+      if (file.size > 0) return candidate;
+    } catch {
+      // continue
+    }
+  }
+  return null;
+}

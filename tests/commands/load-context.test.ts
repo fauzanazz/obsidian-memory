@@ -497,4 +497,41 @@ describe("load-context command", () => {
     expect(output).toContain("## Decisions");
     expect(output).toContain("Chose Bun for speed");
   });
+
+  // ── Task-aware tier ─────────────────────────────────────────
+
+  test("--task falls back to default tier when no GEMINI_API_KEY", async () => {
+    const savedKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+
+    // @ts-ignore
+    Bun.spawn = createVaultMock();
+
+    try {
+      const output = await runLoadContext(tempDir, {
+        tier: "task",
+        taskDescription: "implement auth module",
+      });
+      // Should produce default tier content (Tier 1 + Tier 2), not empty
+      expect(output).toContain("Memory Context — my-app");
+      expect(output).toContain("## Project");
+      expect(output).toContain("## Decisions");
+      // Should NOT contain task context header (since it fell back)
+      expect(output).not.toContain("## Task Context");
+    } finally {
+      if (savedKey !== undefined) process.env.GEMINI_API_KEY = savedKey;
+    }
+  });
+
+  test("--task without taskDescription falls through to default", async () => {
+    // @ts-ignore
+    Bun.spawn = createVaultMock();
+
+    // tier=task but no taskDescription → goes through default path
+    const output = await runLoadContext(tempDir, {
+      tier: "task",
+    });
+    expect(output).toContain("Memory Context — my-app");
+    expect(output).toContain("## Project");
+  });
 });

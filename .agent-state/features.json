@@ -1,0 +1,15 @@
+[
+  { "name": "event-extractor-lib", "description": "Create src/lib/event-extractor.ts with readEvents, searchEvents, formatEventTimeline", "passes": true },
+  { "name": "embeddings-lib", "description": "Create src/lib/embeddings.ts with vectorSearch and reciprocalRankFusion", "passes": true },
+  { "name": "task-aware-load-context", "description": "Add task tier to load-context with LLM retrieval guidance + hybrid search", "passes": true },
+  { "name": "task-flag-cli", "description": "Add --task <description> flag to load-context CLI command", "passes": true },
+  { "name": "timeline-command", "description": "New timeline command with --last, --since, --until, --project flags", "passes": true },
+  { "name": "query-command", "description": "New query <text> command with --since, --until that searches events + sessions", "passes": true },
+  { "name": "cli-wiring", "description": "Wire timeline and query commands into src/index.ts", "passes": true },
+  { "name": "graceful-degradation", "description": "Task tier falls back to default when no GEMINI_API_KEY", "passes": true },
+  { "name": "tests-load-context-task", "description": "Tests for load-context --task tier", "passes": true },
+  { "name": "tests-timeline", "description": "Tests for timeline command", "passes": true },
+  { "name": "tests-query", "description": "Tests for query command", "passes": true },
+  { "name": "review-fixes", "description": "Address all 14 review violations from cubic-dev-ai", "passes": true },
+  { "name": "review-fixes-round-2", "description": "Address 3 review violations from second cubic-dev-ai review", "passes": true }
+]

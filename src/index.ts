@@ -14,6 +14,13 @@ import { runSaveDecision } from "./commands/save-decision";
 import { runMaintain } from "./commands/maintain";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 import { runCreateNote } from "./commands/create-note";
+import { runTimeline } from "./commands/timeline";
+import { runQuery } from "./commands/query";
+
+function parsePositiveInt(value: string): number | undefined {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
 
 const program = new Command();
 
@@ -134,6 +141,7 @@ program
   .option("--minimal", "Tier 1 only: project summary, current state, blockers (~500 tokens)")
   .option("--focus <keyword>", "Load full content for notes matching keyword, compact for the rest")
   .option("--full", "Load everything (backwards compatible, original behavior)")
+  .option("--task <description>", "Task-aware mode: dynamic retrieval guided by task description")
   .option("--no-conventions", "Exclude conventions")
   .option("--no-decisions", "Exclude decisions")
   .option("--sessions <n>", "Number of recent sessions to include", "3")
@@ -143,10 +151,12 @@ program
       if (opts.minimal) tier = "minimal";
       else if (opts.focus) tier = "focus";
       else if (opts.full) tier = "full";
+      else if (opts.task) tier = "task";
 
       const output = await runLoadContext(process.cwd(), {
         tier,
         focus: opts.focus,
+        taskDescription: opts.task,
         includeConventions: opts.conventions !== false,
         includeDecisions: opts.decisions !== false,
         includeSessions: parseInt(opts.sessions, 10),
@@ -341,6 +351,50 @@ program
         overwrite: opts.overwrite,
       });
       console.log(`Note created: ${notePath}`);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("timeline")
+  .description("Show project event timeline from the event index")
+  .option("--last <duration>", "Show events from last N days/weeks/months (e.g., 7d, 2w, 1m)")
+  .option("--since <date>", "Show events since date (YYYY-MM-DD)")
+  .option("--until <date>", "Show events until date (YYYY-MM-DD)")
+  .option("--project <name>", "Override project name from config")
+  .option("--limit <n>", "Maximum number of events")
+  .action(async (opts) => {
+    try {
+      const output = await runTimeline(process.cwd(), {
+        last: opts.last,
+        since: opts.since,
+        until: opts.until,
+        project: opts.project,
+        limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
+      });
+      console.log(output);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("query <text>")
+  .description("Search events and sessions by keyword with optional date filtering")
+  .option("--since <date>", "Filter events since date (YYYY-MM-DD)")
+  .option("--until <date>", "Filter events until date (YYYY-MM-DD)")
+  .option("--limit <n>", "Maximum number of results")
+  .action(async (text: string, opts) => {
+    try {
+      const output = await runQuery(process.cwd(), text, {
+        since: opts.since,
+        until: opts.until,
+        limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
+      });
+      console.log(output);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
