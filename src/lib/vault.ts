@@ -29,6 +29,7 @@ export function getVaultStructure(project: string): VaultStructure {
   const folders = [
     ...VAULT_FOLDERS,
     `Memory/Projects/${project}`,
+    `Memory/Projects/${project}/ADRs`,
     `Memory/Projects/${project}/Docs`,
     `Memory/Projects/${project}/Features`,
     `Memory/Sessions/${project}`,
@@ -98,8 +99,16 @@ tags:
 
 # Decisions — ${project}
 
-<!-- Architecture Decision Records (ADR) style log -->
-<!-- Newest entries at the top -->
+> Architecture Decision Records. Newest first.
+> Use \`obsidian-memory save-decision\` to add new decisions.
+
+## Decision Log
+
+<!-- New ADRs are automatically indexed here by save-decision -->
+
+---
+
+See also: [[Features]], [[Architecture]], [[Conventions]]
 `,
     },
     {

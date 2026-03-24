@@ -271,3 +271,113 @@ ${options.decision}
 ${options.consequences}
 `;
 }
+
+export interface ADRNoteOptions {
+  project: string;
+  adrNumber: number;
+  title: string;
+  date: string;
+  status: "proposed" | "accepted" | "superseded" | "deprecated";
+  categories?: string[];
+  supersedes?: number;
+  supersededBy?: number;
+  impacts?: string[];
+  context: string;
+  decision: string;
+  alternatives?: Array<{
+    name: string;
+    proscons: string;
+  }>;
+  consequences?: string;
+}
+
+export function adrNote(options: ADRNoteOptions): string {
+  const lines: string[] = [];
+  const num = String(options.adrNumber).padStart(3, "0");
+
+  // YAML frontmatter
+  lines.push("---");
+  lines.push("type: adr");
+  lines.push(`project: ${options.project}`);
+  lines.push(`adr: ${options.adrNumber}`);
+  lines.push(`title: ${options.title}`);
+  lines.push(`created: ${options.date}`);
+  lines.push(`updated: ${options.date}`);
+  lines.push(`status: ${options.status}`);
+  if (options.categories?.length) {
+    lines.push("categories:");
+    for (const cat of options.categories) lines.push(`  - ${cat}`);
+  }
+  lines.push(`supersedes: ${options.supersedes ?? "null"}`);
+  lines.push(`superseded_by: ${options.supersededBy ?? "null"}`);
+  if (options.impacts?.length) {
+    lines.push("impacts:");
+    for (const imp of options.impacts) lines.push(`  - ${imp}`);
+  }
+  lines.push("tags:");
+  lines.push("  - adr");
+  lines.push(`  - project/${options.project}`);
+  lines.push("---");
+  lines.push("");
+
+  // Title
+  lines.push(`# ADR-${num}: ${options.title}`);
+  lines.push("");
+
+  // Status section
+  if (options.supersedes) {
+    const supersededNum = String(options.supersedes).padStart(3, "0");
+    lines.push(`## Status — ${options.status} (supersedes [[ADR-${supersededNum}]])`);
+  } else if (options.supersededBy) {
+    const byNum = String(options.supersededBy).padStart(3, "0");
+    lines.push(`## Status — ${options.status} (superseded by [[ADR-${byNum}]])`);
+  } else {
+    lines.push(`## Status — ${options.status}`);
+  }
+  lines.push("");
+
+  // Context
+  lines.push("## Context");
+  lines.push(options.context);
+  lines.push("");
+
+  // Decision
+  lines.push("## Decision");
+  lines.push(options.decision);
+  lines.push("");
+
+  // Alternatives Considered
+  lines.push("## Alternatives Considered");
+  if (options.alternatives?.length) {
+    for (const alt of options.alternatives) {
+      lines.push(`### ${alt.name}`);
+      lines.push(alt.proscons);
+      lines.push("");
+    }
+  } else {
+    lines.push("<!-- No alternatives documented -->");
+    lines.push("");
+  }
+
+  // Consequences
+  lines.push("## Consequences");
+  if (options.consequences) {
+    lines.push(options.consequences);
+  } else {
+    lines.push("<!-- No consequences documented -->");
+  }
+  lines.push("");
+
+  // Related
+  lines.push("## Related");
+  lines.push(`- Project: [[${options.project}/context|${options.project}]]`);
+  lines.push(`- Decisions: [[${options.project}/decisions|${options.project} decisions]]`);
+  if (options.impacts?.length) {
+    for (const imp of options.impacts) {
+      lines.push(`- Feature: [[${imp}]]`);
+    }
+  }
+  lines.push("");
+
+  return lines.join("\n");
+}

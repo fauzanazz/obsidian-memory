@@ -1,25 +1,24 @@
 import { ObsidianCLI } from "../lib/obsidian-cli";
 import { findConfig } from "../lib/config";
+import { adrNote, type ADRNoteOptions } from "../templates/note-templates";
+import { getNextADRNumber, titleToSlug } from "../lib/adr-counter";
 
 export interface SaveDecisionOptions {
   title: string;
   context: string;
   decision: string;
-  categories: string[];
-  impacts: string[];
-  alternatives: string[];
-  consequences: string;
-}
-
-export interface SaveDecisionResult {
-  notePath: string;
-  adrNumber: number;
+  status?: string;
+  categories?: string[];
+  impacts?: string[];
+  supersedes?: number;
+  alternatives?: string[]; // "Name: description" format from CLI
+  consequences?: string;
 }
 
 export async function runSaveDecision(
   cwd: string,
   options: SaveDecisionOptions
-): Promise<SaveDecisionResult> {
+): Promise<{ notePath: string; adrNumber: number }> {
   const found = await findConfig(cwd);
   if (!found) {
     throw new Error(
@@ -30,82 +29,82 @@ export async function runSaveDecision(
   const { vault, project } = found.config;
   const cli = new ObsidianCLI(vault);
 
-  // Determine next ADR number by searching existing decisions
-  const adrNumber = await getNextAdrNumber(cli, project);
-  const adrId = `ADR-${String(adrNumber).padStart(3, "0")}`;
-  const slug = options.title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30);
-
-  const notePath = `Memory/Projects/${project}/Decisions/${adrId}-${slug}`;
+  const adrNumber = await getNextADRNumber(cli, project);
   const date = new Date().toISOString().split("T")[0];
+  const slug = titleToSlug(options.title);
+  const num = String(adrNumber).padStart(3, "0");
 
-  const lines: string[] = [];
-  lines.push("---");
-  lines.push("type: decision");
-  lines.push(`adr: ${adrNumber}`);
-  lines.push(`project: ${project}`);
-  lines.push(`created: ${date}`);
-  lines.push("status: accepted");
-  lines.push("categories:");
-  for (const c of options.categories) lines.push(`  - ${c}`);
-  lines.push("impacts:");
-  for (const i of options.impacts) lines.push(`  - ${i}`);
-  lines.push("tags:");
-  lines.push("  - decision");
-  lines.push(`  - project/${project}`);
-  lines.push("---");
-  lines.push("");
-  lines.push(`# ${adrId}: ${options.title}`);
-  lines.push("");
-  lines.push("## Context");
-  lines.push(options.context);
-  lines.push("");
-  lines.push("## Decision");
-  lines.push(options.decision);
-  lines.push("");
+  // Parse alternatives from "Name: description" strings
+  const alternatives = options.alternatives?.map((alt) => {
+    const colonIdx = alt.indexOf(":");
+    if (colonIdx > 0) {
+      return {
+        name: alt.slice(0, colonIdx).trim(),
+        proscons: alt.slice(colonIdx + 1).trim(),
+      };
+    }
+    return { name: alt, proscons: "" };
+  });
 
-  if (options.alternatives.length > 0) {
-    lines.push("## Alternatives Considered");
-    for (const a of options.alternatives) lines.push(`- ${a}`);
-    lines.push("");
-  }
+  const status = (options.status || "accepted") as ADRNoteOptions["status"];
 
-  lines.push("## Consequences");
-  lines.push(options.consequences);
-  lines.push("");
+  const content = adrNote({
+    project,
+    adrNumber,
+    title: options.title,
+    date,
+    status,
+    categories: options.categories,
+    supersedes: options.supersedes,
+    impacts: options.impacts,
+    context: options.context,
+    decision: options.decision,
+    alternatives,
+    consequences: options.consequences,
+  });
+
+  const notePath = `Memory/Projects/${project}/ADRs/ADR-${num}-${slug}.md`;
 
   await cli.create({
-    name: notePath,
-    content: lines.join("\n"),
+    name: notePath.replace(/\.md$/, ""),
+    content,
     silent: true,
   });
 
-  return { notePath, adrNumber };
-}
-
-async function getNextAdrNumber(
-  cli: ObsidianCLI,
-  project: string
-): Promise<number> {
+  // Update decisions.md index: prepend a wikilink after the header
   try {
-    const results = await cli.search("ADR-", {
-      path: `Memory/Projects/${project}/Decisions/`,
-      limit: 1000,
+    await cli.prepend({
+      path: `Memory/Projects/${project}/decisions.md`,
+      content: `\n- [[ADRs/ADR-${num}-${slug}|ADR-${num}: ${options.title}]] — ${status} (${date})\n`,
     });
-
-    let maxNumber = 0;
-    for (const result of results) {
-      const match = result.path.match(/ADR-(\d+)/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNumber) maxNumber = num;
-      }
-    }
-    return maxNumber + 1;
   } catch {
-    return 1;
+    // decisions.md may not exist yet — not critical
   }
+
+  // If supersedes is set, update the superseded ADR's frontmatter
+  if (options.supersedes) {
+    const supersededNum = String(options.supersedes).padStart(3, "0");
+    try {
+      const searchResults = await cli.search(`ADR-${supersededNum}`, {
+        path: `Memory/Projects/${project}/ADRs/`,
+      });
+      if (searchResults.length > 0) {
+        const oldAdrPath = searchResults[0].path;
+        await cli.setProperty({
+          path: oldAdrPath,
+          name: "superseded_by",
+          value: String(adrNumber),
+        });
+        await cli.setProperty({
+          path: oldAdrPath,
+          name: "status",
+          value: "superseded",
+        });
+      }
+    } catch {
+      // Best effort — don't fail the whole command if we can't update the old ADR
+    }
+  }
+
+  return { notePath, adrNumber };
 }

@@ -10,6 +10,7 @@ import { runSaveFeature } from "./commands/save-feature";
 import { runSearch, formatSearchResults } from "./commands/search";
 import { runConsolidate } from "./commands/consolidate";
 import { runDocument, formatDocumentResult } from "./commands/document";
+import { runSaveDecision } from "./commands/save-decision";
 import { runMaintain } from "./commands/maintain";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
 
@@ -187,23 +188,29 @@ program
   .description("Create or update a feature note in the memory vault")
   .requiredOption("--slug <slug>", "Feature identifier in kebab-case (e.g., auth-jwt)")
   .requiredOption("--title <title>", "Human-readable feature name")
-  .option("--status <status>", "Feature status (draft, in-progress, completed)", "in-progress")
+  .option("--status <status>", "Feature status (draft, in-progress, completed, deprecated)", "in-progress")
   .option("--categories <items...>", "Feature categories/domains")
+  .option("--decided-by <items...>", "ADR slugs that shaped this feature")
   .option("--sessions <items...>", "Session note names related to this feature")
   .option("--summary <text>", "One-paragraph feature summary")
   .option("--key-files <items...>", 'Key files in path:role format (e.g., src/auth.ts:JWT signing)')
+  .option("--limitations <items...>", "Known limitations")
+  .option("--overwrite", "Overwrite existing feature note")
   .action(async (opts) => {
     try {
-      const result = await runSaveFeature(process.cwd(), {
+      const notePath = await runSaveFeature(process.cwd(), {
         slug: opts.slug,
         title: opts.title,
         status: opts.status,
-        categories: opts.categories || [],
-        sessions: opts.sessions || [],
-        summary: opts.summary || "",
-        keyFiles: opts.keyFiles || [],
+        categories: opts.categories,
+        decidedBy: opts.decidedBy,
+        sessions: opts.sessions,
+        summary: opts.summary,
+        keyFiles: opts.keyFiles,
+        limitations: opts.limitations,
+        overwrite: opts.overwrite,
       });
-      console.log(`Feature note saved: ${result.notePath}`);
+      console.log(`Feature note saved: ${notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
@@ -242,6 +249,38 @@ program
         distill: opts.distill,
       });
       console.log(result.message);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("save-decision")
+  .description("Create an Architecture Decision Record (ADR) in the memory vault")
+  .requiredOption("--title <title>", "Decision title (e.g., 'JWT over Session Cookies')")
+  .requiredOption("--context <text>", "What problem motivated this decision")
+  .requiredOption("--decision <text>", "What was decided (1-3 sentences)")
+  .option("--status <status>", "Decision status (proposed, accepted, superseded, deprecated)", "accepted")
+  .option("--categories <items...>", "Decision categories/domains")
+  .option("--impacts <items...>", "Feature slugs affected by this decision")
+  .option("--supersedes <number>", "ADR number this decision replaces", parseInt)
+  .option("--alternatives <items...>", "Alternatives in 'Name: description' format")
+  .option("--consequences <text>", "What follows from this decision")
+  .action(async (opts) => {
+    try {
+      const { notePath, adrNumber } = await runSaveDecision(process.cwd(), {
+        title: opts.title,
+        context: opts.context,
+        decision: opts.decision,
+        status: opts.status,
+        categories: opts.categories,
+        impacts: opts.impacts,
+        supersedes: opts.supersedes,
+        alternatives: opts.alternatives,
+        consequences: opts.consequences,
+      });
+      console.log(`ADR-${String(adrNumber).padStart(3, "0")} saved: ${notePath}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);

@@ -34,7 +34,19 @@ Read the output carefully before starting work — it contains decisions and con
 
 ### Saving Decisions
 
-When you make a significant architectural or design decision, note it. You will save it at session end.
+When you make a significant architectural or design decision, save it immediately:
+
+\`\`\`bash
+obsidian-memory save-decision \\
+  --title "JWT over Session Cookies" \\
+  --context "Need auth for the API, evaluating stateful vs stateless" \\
+  --decision "Use JWT in httpOnly cookies with refresh rotation" \\
+  --alternatives "Session cookies with Redis: simple revocation but requires Redis" \\
+  --consequences "Stateless auth, no session store, but token revocation needs a blacklist" \\
+  --impacts "auth-jwt"
+\`\`\`
+
+Include alternatives you considered and why they were rejected — this prevents future agents from re-debating settled decisions.
 
 ### Searching Memory
 
@@ -178,6 +190,7 @@ The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obs
 | \`obsidian-memory save-feature\` | Save a feature note |
 | \`obsidian-memory search <query>\` | Search memory vault |
 | \`obsidian-memory consolidate\` | Merge old sessions |
+| \`obsidian-memory save-decision\` | Create an Architecture Decision Record |
 | \`obsidian-memory document\` | Scan project and generate docs |
 | \`obsidian-memory maintain --enrich\` | Auto-extract features, decisions, and cross-links from sessions |
 | \`obsidian-memory init\` | Set up a new project |
