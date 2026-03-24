@@ -1,5 +1,6 @@
 import { ObsidianCLI, type SearchResult } from "../lib/obsidian-cli";
 import { findConfig } from "../lib/config";
+import { existsSync } from "fs";
 import { createSearchProvider, type HybridSearchResult } from "../lib/search";
 
 export interface SearchCommandOptions {
@@ -76,9 +77,7 @@ function resolveVaultPath(config: {
     `${home}/Obsidian/${config.vault}`,
   ];
   for (const candidate of candidates) {
-    try {
-      if (Bun.file(candidate + "/Memory/Index.md").size > 0) return candidate;
-    } catch {}
+    if (existsSync(candidate + "/Memory")) return candidate;
   }
   return null;
 }

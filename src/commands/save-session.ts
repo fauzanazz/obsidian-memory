@@ -2,6 +2,7 @@ import { ObsidianCLI } from "../lib/obsidian-cli";
 import { findConfig } from "../lib/config";
 import { sessionNote } from "../templates/note-templates";
 import { randomBytes } from "crypto";
+import { existsSync } from "fs";
 import {
   extractEvents,
   appendEvents,
@@ -126,9 +127,7 @@ function resolveVaultPath(config: {
   ];
 
   for (const candidate of candidates) {
-    try {
-      if (Bun.file(candidate + "/Memory").size > 0) return candidate;
-    } catch {}
+    if (existsSync(candidate + "/Memory")) return candidate;
   }
 
   return null;

@@ -156,6 +156,17 @@ describe("index persistence", () => {
     expect(loaded.entries[0].embedding).toEqual([0.1, 0.2, 0.3]);
   });
 
+  test("loadIndex throws on corrupt JSON", async () => {
+    const indexPath = getIndexPath(tempDir);
+    const dir = join(tempDir, "Memory/.embeddings");
+    await Bun.write(join(dir, ".gitkeep"), "");
+    await Bun.write(indexPath, "not valid json{{{");
+
+    await expect(loadIndex(tempDir)).rejects.toThrow(
+      "Failed to parse embedding index",
+    );
+  });
+
   test("loadIndex resets on version mismatch", async () => {
     const oldIndex = {
       version: 999,
@@ -628,10 +639,14 @@ describe("vectorSearch", () => {
 });
 
 describe("detectHybridSearch", () => {
-  const originalKey = process.env.GEMINI_API_KEY;
+  let originalKey: string | undefined;
+
+  beforeEach(() => {
+    originalKey = process.env.GEMINI_API_KEY;
+  });
 
   afterEach(() => {
-    if (originalKey) {
+    if (originalKey !== undefined) {
       process.env.GEMINI_API_KEY = originalKey;
     } else {
       delete process.env.GEMINI_API_KEY;
