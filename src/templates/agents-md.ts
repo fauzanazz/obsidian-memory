@@ -1,11 +1,10 @@
-export function generateAgentsMd(project: string, vault: string): string {
+export function generateAgentsMd(project: string, _vault?: string): string {
   return `# Memory System — obsidian-memory
 
-This project uses **obsidian-memory** for persistent, cross-agent memory stored in an Obsidian vault.
-All session context, decisions, conventions, and progress are stored in the vault and accessible
-to any AI coding agent that reads this file.
+This project uses **obsidian-memory** for persistent, cross-agent memory.
+All session context, decisions, conventions, and progress are stored locally
+and accessible to any AI coding agent that reads this file.
 
-**Vault:** \`${vault}\`
 **Project:** \`${project}\`
 
 ---
@@ -19,12 +18,13 @@ obsidian-memory load-context
 \`\`\`
 
 This outputs a compact project summary, current state, active blockers, pending next steps,
-and one-line indexes of features, decisions, modules, and recent sessions.
+and one-line indexes of features, decisions, and recent sessions.
 
 **Options for different needs:**
 - \`--minimal\` — just the essentials (~500 tokens, use when context is tight)
 - \`--focus "auth"\` — full detail for auth-related notes, compact for the rest
-- \`--full\` — everything (full session notes, full docs, full conventions)
+- \`--full\` — everything (full session notes, full docs)
+- \`--task "description"\` — task-aware retrieval: finds sessions and events relevant to your current task
 
 Read the output carefully before starting work — it contains decisions and context from prior sessions.
 
@@ -56,10 +56,27 @@ If you need to recall past context, decisions, or work:
 obsidian-memory search "your query here"
 \`\`\`
 
-This searches the entire memory vault. Use it when:
+This uses hybrid search (keyword + semantic when GEMINI_API_KEY is set). Use it when:
 - You need to recall why a decision was made
 - You want to check if something was already attempted
 - You need context from a previous session by a different agent
+
+### Querying Events
+
+To search the temporal event index:
+
+\`\`\`bash
+obsidian-memory query "authentication" --since 2026-03-01
+obsidian-memory timeline --last 7d
+\`\`\`
+
+### Retrieving a Session
+
+To get the full content of a specific session:
+
+\`\`\`bash
+obsidian-memory get <session-id>
+\`\`\`
 
 ---
 
@@ -85,9 +102,9 @@ The summary should be concise but complete enough for a different agent to conti
 
 ## Cross-Agent Handoff
 
-When you save a session, the note is stored in the vault with wikilinks to the project context
-and decision log. The next agent (regardless of which tool it is) will see your session summary
-when it runs \`obsidian-memory load-context\`.
+When you save a session, it is stored with a temporal event record. The next agent
+(regardless of which tool it is) will see your session summary when it runs
+\`obsidian-memory load-context\`.
 
 **To ensure smooth handoffs:**
 1. Always save a session summary before ending
@@ -99,84 +116,25 @@ when it runs \`obsidian-memory load-context\`.
 
 ## Memory Consolidation
 
-If the vault has many old session notes, suggest running:
+If the project has many old session notes, suggest running:
 
 \`\`\`bash
-# LLM-powered distillation (recommended — produces rich journals + updates canonical docs)
+# LLM-powered distillation (recommended)
 obsidian-memory consolidate --distill
 
-# Simple summary-only mode (no LLM required)
+# Simple archive mode (no LLM required)
 obsidian-memory consolidate --auto
 \`\`\`
-
-Distillation reads old sessions, synthesizes themes and patterns, updates project context
-and progress, creates missing feature/decision notes, and archives the original sessions.
-Requires a \`GEMINI_API_KEY\` environment variable.
-
----
-
-## Documentation Protocol
-
-This project maintains structured documentation in the memory vault to prevent feature duplication
-and enable surgical debugging. Generate docs with \`obsidian-memory document\`, then maintain them
-during sessions.
-
-### Before Creating New Code
-
-Search the documentation before implementing anything new:
-
-\`\`\`bash
-obsidian-memory search "feature name or concept"
-\`\`\`
-
-If the feature already exists, work with the existing implementation instead of creating a duplicate.
-The Features doc lists what's been built; the Modules doc maps directories to their purpose.
-
-### Before Debugging
-
-Read the module documentation to know exactly where to look:
-
-\`\`\`bash
-obsidian-memory search "module or area related to the bug"
-\`\`\`
-
-The Modules doc maps directories to their purpose and entry points — use it to go straight
-to the right file instead of exploring blindly.
-
-### After Implementing
-
-Update the relevant documentation:
-- **Save new features**: \`obsidian-memory save-feature --slug my-feature --title "My Feature" --summary "What it does"\`
-- Update module descriptions if you changed a module's purpose
-- Add patterns or gotchas to Conventions
-- Update Architecture if you changed the system structure
-
----
-
-## Automatic Enrichment
-
-After saving a session, you can run enrichment to automatically create feature notes,
-ADR notes, and cross-links from the session content:
-
-\`\`\`bash
-obsidian-memory maintain --enrich
-\`\`\`
-
-This uses an LLM to analyze the session and extract structured artifacts.
-Requires a \`GEMINI_API_KEY\` environment variable (or the key configured in \`.obsidian-memory.json\`).
 
 ---
 
 ## Troubleshooting
 
-### "Obsidian is not running"
-The memory system requires the Obsidian desktop app to be running. Ask the user to start Obsidian.
-
-### "No .obsidian-memory.json found"
+### "No .obsidian-memory config found"
 Run \`obsidian-memory init\` to set up the project.
 
-### "vault not found"
-The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obsidian.
+### "Session not found"
+The session ID may be incorrect. Use \`obsidian-memory timeline\` to find recent sessions.
 
 ---
 
@@ -188,11 +146,16 @@ The vault \`${vault}\` may not exist in Obsidian. Ask the user to open it in Obs
 | \`obsidian-memory load-context\` | Load project context |
 | \`obsidian-memory save-session\` | Save a session summary |
 | \`obsidian-memory save-feature\` | Save a feature note |
-| \`obsidian-memory search <query>\` | Search memory vault |
-| \`obsidian-memory consolidate\` | Merge old sessions |
 | \`obsidian-memory save-decision\` | Create an Architecture Decision Record |
+| \`obsidian-memory search <query>\` | Hybrid search across memory |
+| \`obsidian-memory query <text>\` | Search events and sessions |
+| \`obsidian-memory timeline\` | Show project event timeline |
+| \`obsidian-memory get <session-id>\` | Get full session content |
+| \`obsidian-memory consolidate\` | Archive old sessions |
 | \`obsidian-memory document\` | Scan project and generate docs |
-| \`obsidian-memory maintain --enrich\` | Auto-extract features, decisions, and cross-links from sessions |
+| \`obsidian-memory maintain --enrich\` | Extract features, decisions, events from sessions |
+| \`obsidian-memory sync\` | Export to Obsidian vault (optional) |
+| \`obsidian-memory migrate\` | Import from Obsidian vault |
 | \`obsidian-memory init\` | Set up a new project |
 `;
 }

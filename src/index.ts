@@ -13,9 +13,11 @@ import { runDocument, formatDocumentResult } from "./commands/document";
 import { runSaveDecision } from "./commands/save-decision";
 import { runMaintain } from "./commands/maintain";
 import { detectAgents, runInit, formatInitResult, type AgentId } from "./commands/init";
-import { runCreateNote } from "./commands/create-note";
 import { runTimeline } from "./commands/timeline";
 import { runQuery } from "./commands/query";
+import { runGet } from "./commands/get";
+import { runSync, formatSyncResult } from "./commands/sync";
+import { runMigrate } from "./commands/migrate";
 
 function parsePositiveInt(value: string): number | undefined {
   const n = parseInt(value, 10);
@@ -26,7 +28,7 @@ const program = new Command();
 
 program
   .name("obsidian-memory")
-  .description("Universal memory layer for AI coding agents, powered by Obsidian")
+  .description("Universal memory layer for AI coding agents")
   .version("0.1.0");
 
 program
@@ -129,7 +131,7 @@ program
 
 program
   .command("status")
-  .description("Check system health (Obsidian running, vault exists, config valid)")
+  .description("Check system health (database, embeddings, config)")
   .action(async () => {
     const result = await runStatus(process.cwd());
     console.log(formatStatus(result));
@@ -201,27 +203,21 @@ program
   .requiredOption("--title <title>", "Human-readable feature name")
   .option("--status <status>", "Feature status (draft, in-progress, completed, deprecated)", "in-progress")
   .option("--categories <items...>", "Feature categories/domains")
-  .option("--decided-by <items...>", "ADR slugs that shaped this feature")
-  .option("--sessions <items...>", "Session note names related to this feature")
   .option("--summary <text>", "One-paragraph feature summary")
   .option("--key-files <items...>", 'Key files in path:role format (e.g., src/auth.ts:JWT signing)')
   .option("--limitations <items...>", "Known limitations")
-  .option("--overwrite", "Overwrite existing feature note")
   .action(async (opts) => {
     try {
-      const notePath = await runSaveFeature(process.cwd(), {
+      const slug = await runSaveFeature(process.cwd(), {
         slug: opts.slug,
         title: opts.title,
         status: opts.status,
         categories: opts.categories,
-        decidedBy: opts.decidedBy,
-        sessions: opts.sessions,
         summary: opts.summary,
         keyFiles: opts.keyFiles,
         limitations: opts.limitations,
-        overwrite: opts.overwrite,
       });
-      console.log(`Feature note saved: ${notePath}`);
+      console.log(`Feature saved: ${slug}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
@@ -280,7 +276,7 @@ program
   .option("--consequences <text>", "What follows from this decision")
   .action(async (opts) => {
     try {
-      const { notePath, adrNumber } = await runSaveDecision(process.cwd(), {
+      const { id, adrNumber } = await runSaveDecision(process.cwd(), {
         title: opts.title,
         context: opts.context,
         decision: opts.decision,
@@ -291,7 +287,7 @@ program
         alternatives: opts.alternatives,
         consequences: opts.consequences,
       });
-      console.log(`ADR-${String(adrNumber).padStart(3, "0")} saved: ${notePath}`);
+      console.log(`ADR-${String(adrNumber).padStart(3, "0")} saved: ${id}`);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
@@ -336,28 +332,6 @@ program
   });
 
 program
-  .command("create-note")
-  .description("Create a note in the memory vault with specified path and content")
-  .requiredOption("--path <path>", "Vault-relative path for the note (e.g., Memory/Projects/my-app/Docs/ADR.md)")
-  .requiredOption("--content <markdown>", "Markdown content for the note")
-  .option("--vault <name>", "Obsidian vault name (defaults to config)")
-  .option("--overwrite", "Overwrite existing note")
-  .action(async (opts) => {
-    try {
-      const notePath = await runCreateNote(process.cwd(), {
-        path: opts.path,
-        content: opts.content,
-        vault: opts.vault,
-        overwrite: opts.overwrite,
-      });
-      console.log(`Note created: ${notePath}`);
-    } catch (e: any) {
-      console.error(`Error: ${e.message}`);
-      process.exit(1);
-    }
-  });
-
-program
   .command("timeline")
   .description("Show project event timeline from the event index")
   .option("--last <duration>", "Show events from last N days/weeks/months (e.g., 7d, 2w, 1m)")
@@ -395,6 +369,51 @@ program
         limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
       });
       console.log(output);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("get <session-id>")
+  .description("Retrieve full session content by ID")
+  .action(async (sessionId: string) => {
+    try {
+      const output = await runGet(process.cwd(), sessionId);
+      console.log(output);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("sync")
+  .description("Export SQLite memory to Obsidian vault (markdown notes)")
+  .option("--vault-path <path>", "Override vault filesystem path")
+  .action(async (opts) => {
+    try {
+      const result = await runSync(process.cwd(), {
+        vaultPath: opts.vaultPath?.replace(/^~/, process.env.HOME || "~"),
+      });
+      console.log(formatSyncResult(result));
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description("Import existing Obsidian vault into SQLite database")
+  .requiredOption("--from-vault <path>", "Filesystem path to the Obsidian vault")
+  .action(async (opts) => {
+    try {
+      const result = await runMigrate(process.cwd(), {
+        fromVault: opts.fromVault,
+      });
+      console.log(result.message);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);

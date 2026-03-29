@@ -1,7 +1,4 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
-import { findConfig } from "../lib/config";
-import { adrNote, type ADRNoteOptions } from "../templates/note-templates";
-import { getNextADRNumber, titleToSlug } from "../lib/adr-counter";
+import { findConfig, openStore } from "../lib/config";
 
 export interface SaveDecisionOptions {
   title: string;
@@ -11,100 +8,55 @@ export interface SaveDecisionOptions {
   categories?: string[];
   impacts?: string[];
   supersedes?: number;
-  alternatives?: string[]; // "Name: description" format from CLI
+  alternatives?: string[];
   consequences?: string;
 }
 
 export async function runSaveDecision(
   cwd: string,
-  options: SaveDecisionOptions
-): Promise<{ notePath: string; adrNumber: number }> {
+  options: SaveDecisionOptions,
+): Promise<{ id: string; adrNumber: number }> {
   const found = await findConfig(cwd);
   if (!found) {
-    throw new Error(
-      "No .obsidian-memory.json found. Run `obsidian-memory init` first."
-    );
+    throw new Error("No .obsidian-memory config found. Run `obsidian-memory init` first.");
   }
 
-  const { vault, project } = found.config;
-  const cli = new ObsidianCLI(vault);
-
-  const adrNumber = await getNextADRNumber(cli, project);
-  const date = new Date().toISOString().split("T")[0];
-  const slug = titleToSlug(options.title);
-  const num = String(adrNumber).padStart(3, "0");
+  const store = openStore(found.dir, found.config);
 
   // Parse alternatives from "Name: description" strings
   const alternatives = options.alternatives?.map((alt) => {
     const colonIdx = alt.indexOf(":");
     if (colonIdx > 0) {
-      return {
-        name: alt.slice(0, colonIdx).trim(),
-        proscons: alt.slice(colonIdx + 1).trim(),
-      };
+      return { name: alt.slice(0, colonIdx).trim(), proscons: alt.slice(colonIdx + 1).trim() };
     }
     return { name: alt, proscons: "" };
   });
 
-  const status = (options.status || "accepted") as ADRNoteOptions["status"];
+  if (options.supersedes) {
+    const old = store.getDecisionByADRNumber(options.supersedes);
+    if (!old) {
+      store.close();
+      throw new Error(`Cannot supersede ADR-${String(options.supersedes).padStart(3, "0")}: not found.`);
+    }
+  }
 
-  const content = adrNote({
-    project,
-    adrNumber,
+  const { id, adrNumber } = store.insertDecision({
+    project: found.config.project,
     title: options.title,
-    date,
-    status,
-    categories: options.categories,
-    supersedes: options.supersedes,
-    impacts: options.impacts,
+    status: options.status ?? (options.supersedes ? "accepted" : undefined),
     context: options.context,
     decision: options.decision,
     alternatives,
     consequences: options.consequences,
+    categories: options.categories,
+    impacts: options.impacts,
   });
 
-  const notePath = `Memory/Projects/${project}/ADRs/ADR-${num}-${slug}.md`;
-
-  await cli.create({
-    name: notePath.replace(/\.md$/, ""),
-    content,
-    silent: true,
-  });
-
-  // Update decisions.md index: prepend a wikilink after the header
-  try {
-    await cli.prepend({
-      path: `Memory/Projects/${project}/decisions.md`,
-      content: `\n- [[ADRs/ADR-${num}-${slug}|ADR-${num}: ${options.title}]] — ${status} (${date})\n`,
-    });
-  } catch {
-    // decisions.md may not exist yet — not critical
-  }
-
-  // If supersedes is set, update the superseded ADR's frontmatter
   if (options.supersedes) {
-    const supersededNum = String(options.supersedes).padStart(3, "0");
-    try {
-      const searchResults = await cli.search(`ADR-${supersededNum}`, {
-        path: `Memory/Projects/${project}/ADRs/`,
-      });
-      if (searchResults.length > 0) {
-        const oldAdrPath = searchResults[0].path;
-        await cli.setProperty({
-          path: oldAdrPath,
-          name: "superseded_by",
-          value: String(adrNumber),
-        });
-        await cli.setProperty({
-          path: oldAdrPath,
-          name: "status",
-          value: "superseded",
-        });
-      }
-    } catch {
-      // Best effort — don't fail the whole command if we can't update the old ADR
-    }
+    const old = store.getDecisionByADRNumber(options.supersedes)!;
+    store.updateDecisionStatus(old.id, "superseded");
   }
 
-  return { notePath, adrNumber };
+  store.close();
+  return { id, adrNumber };
 }

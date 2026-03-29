@@ -1,82 +1,104 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
+import { join } from "path";
 import { findConfig } from "../lib/config";
-import { detectHybridSearch } from "../lib/search";
-import { validateVaultHealth } from "../lib/vault";
 
 export interface StatusResult {
   configFound: boolean;
-  vault?: string;
+  configVersion: "v1" | "v2" | null;
   project?: string;
-  obsidianRunning: boolean;
-  cliAvailable: boolean;
-  obsidianVersion?: string;
-  vaultHealthy?: boolean;
-  missingFolders?: string[];
+  dbExists: boolean;
+  dbSessions: number;
+  dbEvents: number;
+  dbDecisions: number;
+  dbFeatures: number;
+  embeddingsExists: boolean;
+  embeddingsEntries: number;
   hybridSearchAvailable: boolean;
 }
 
 export async function runStatus(cwd: string): Promise<StatusResult> {
   const result: StatusResult = {
     configFound: false,
-    obsidianRunning: false,
-    cliAvailable: false,
+    configVersion: null,
+    dbExists: false,
+    dbSessions: 0,
+    dbEvents: 0,
+    dbDecisions: 0,
+    dbFeatures: 0,
+    embeddingsExists: false,
+    embeddingsEntries: 0,
     hybridSearchAvailable: false,
   };
 
-  // Find config
   const found = await findConfig(cwd);
-  if (found) {
-    result.configFound = true;
-    result.vault = found.config.vault;
-    result.project = found.config.project;
+  if (!found) return result;
+
+  result.configFound = true;
+  result.project = found.config.project;
+
+  // Detect config version
+  const v2Config = Bun.file(join(found.dir, ".obsidian-memory", "config.json"));
+  result.configVersion = (await v2Config.exists()) ? "v2" : "v1";
+
+  // Check database
+  const dbPath = join(found.dir, ".obsidian-memory", "memory.db");
+  const dbFile = Bun.file(dbPath);
+  result.dbExists = await dbFile.exists();
+
+  if (result.dbExists) {
+    try {
+      const { MemoryStore } = await import("../lib/store");
+      const store = new MemoryStore(dbPath, found.config.project);
+      result.dbSessions = store.countSessions();
+      result.dbEvents = store.countEvents();
+      result.dbDecisions = store.countDecisions();
+      result.dbFeatures = store.countFeatures();
+      store.close();
+    } catch {
+      // DB may be corrupt
+    }
   }
 
-  // Check Obsidian availability
-  const cli = new ObsidianCLI(result.vault || "");
-  const availability = await cli.checkAvailability();
-  result.obsidianRunning = availability.obsidianRunning;
-  result.cliAvailable = availability.cliAvailable;
-  result.obsidianVersion = availability.version;
+  // Check embeddings
+  const embPath = join(found.dir, ".obsidian-memory", "embeddings.bin");
+  const embFile = Bun.file(embPath);
+  result.embeddingsExists = await embFile.exists();
 
-  // Check vault health if we have a filesystem path
-  if (found?.config.vaultPath) {
-    const health = await validateVaultHealth(found.config.vaultPath);
-    result.vaultHealthy = health.healthy;
-    result.missingFolders = health.missingFolders;
+  if (result.embeddingsExists) {
+    try {
+      const { loadEmbeddingsFile } = await import("../lib/embeddings-bin");
+      const index = await loadEmbeddingsFile(embPath);
+      result.embeddingsEntries = index?.count ?? 0;
+    } catch {
+      // embeddings may be corrupt
+    }
   }
 
-  // Check hybrid search
-  result.hybridSearchAvailable = await detectHybridSearch();
+  result.hybridSearchAvailable = !!process.env.GEMINI_API_KEY;
 
   return result;
 }
 
 export function formatStatus(status: StatusResult): string {
   const lines: string[] = [];
-
   lines.push("# obsidian-memory status\n");
 
   if (status.configFound) {
-    lines.push(`Config:    found (vault: ${status.vault}, project: ${status.project})`);
+    lines.push(`Config:      found (${status.configVersion}, project: ${status.project})`);
   } else {
-    lines.push("Config:    not found (run `obsidian-memory init`)");
+    lines.push("Config:      not found (run `obsidian-memory init`)");
+    return lines.join("\n");
   }
 
-  lines.push(
-    `Obsidian:  ${status.obsidianRunning ? "running" : "not running"}${
-      status.obsidianVersion ? ` (v${status.obsidianVersion})` : ""
-    }`
-  );
-  lines.push(`CLI:       ${status.cliAvailable ? "available" : "not available"}`);
-  lines.push(
-    `Search:    ${status.hybridSearchAvailable ? "hybrid (semantic + keyword)" : "keyword only"}`
-  );
-
-  if (status.vaultHealthy !== undefined) {
-    lines.push(
-      `Vault:     ${status.vaultHealthy ? "healthy" : `issues (missing: ${status.missingFolders?.join(", ")})`}`
-    );
+  lines.push(`Database:    ${status.dbExists ? "ok" : "not found"}`);
+  if (status.dbExists) {
+    lines.push(`  Sessions:  ${status.dbSessions}`);
+    lines.push(`  Events:    ${status.dbEvents}`);
+    lines.push(`  Decisions: ${status.dbDecisions}`);
+    lines.push(`  Features:  ${status.dbFeatures}`);
   }
+
+  lines.push(`Embeddings:  ${status.embeddingsExists ? `${status.embeddingsEntries} entries` : "none"}`);
+  lines.push(`Search:      ${status.hybridSearchAvailable ? "hybrid (keyword + vector)" : "keyword only (set GEMINI_API_KEY for hybrid)"}`);
 
   return lines.join("\n");
 }

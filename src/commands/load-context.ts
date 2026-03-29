@@ -1,9 +1,9 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
-import { findConfig, resolveVaultPath } from "../lib/config";
-import { callLLMJson } from "../lib/llm";
-import { vectorSearch, reciprocalRankFusion } from "../lib/embeddings";
-import { readEvents, searchEvents, formatEventTimeline } from "../lib/event-extractor";
-
+import { findConfig, openStore, getEmbeddingsPath } from "../lib/config";
+import { expandQuery } from "../lib/query-expander";
+import { hybridSearch } from "../lib/retrieval";
+import { loadEmbeddingsFile } from "../lib/embeddings-bin";
+import { embedQuery } from "../lib/embeddings";
+import type { MemoryStore } from "../lib/store";
 export type LoadContextTier = "minimal" | "default" | "focus" | "full" | "task";
 
 export interface LoadContextOptions {
@@ -26,7 +26,7 @@ const DEFAULTS: LoadContextDefaults = {
 
 export async function runLoadContext(
   cwd: string,
-  options?: LoadContextOptions
+  options?: LoadContextOptions,
 ): Promise<string> {
   const opts = { ...DEFAULTS, ...options };
   if (opts.focus) opts.tier = "focus";
@@ -34,49 +34,47 @@ export async function runLoadContext(
   const found = await findConfig(cwd);
   if (!found) {
     throw new Error(
-      "No .obsidian-memory.json found. Run `obsidian-memory init` first."
+      "No .obsidian-memory config found. Run `obsidian-memory init` first.",
     );
   }
 
-  const { vault, project } = found.config;
-  const cli = new ObsidianCLI(vault);
-  const sections: string[] = [];
+  const store = openStore(found.dir, found.config);
+  try {
+    const project = found.config.project;
+    const sections: string[] = [];
 
-  // Tier 1: Always loaded
-  await loadTier1(cli, project, sections);
+    // Tier 1: Always loaded
+    loadTier1(store, project, sections);
 
-  if (opts.tier === "minimal") {
-    return formatOutput(project, sections);
-  }
-
-  // Task-aware tier: dynamic retrieval guided by task description
-  if (opts.tier === "task" && opts.taskDescription) {
-    const vaultPath = resolveVaultPath(found.config);
-    if (vaultPath) {
-      await loadTaskAware(cli, project, vaultPath, opts.taskDescription, sections, opts);
-    } else {
-      // Can't resolve vault path — fall back to default tier
-      await loadTier2(cli, project, sections, opts);
+    if (opts.tier === "minimal") {
+      return formatOutput(project, sections);
     }
+
+    // Task-aware tier
+    if (opts.tier === "task" && opts.taskDescription) {
+      await loadTaskAware(store, found.dir, project, opts.taskDescription, sections, opts);
+      return formatOutput(project, sections);
+    }
+
+    // Tier 2: Compact indexes
+    loadTier2(store, sections, opts);
+
+    if (opts.tier === "default") {
+      return formatOutput(project, sections);
+    }
+
+    // Tier 3 (focus mode): keyword-matched sessions and events
+    if (opts.tier === "focus" && opts.focus) {
+      loadFocused(store, sections, opts.focus);
+      return formatOutput(project, sections);
+    }
+
+    // Full mode: everything
+    loadFull(store, sections, opts);
     return formatOutput(project, sections);
+  } finally {
+    store.close();
   }
-
-  // Tier 2: Compact indexes
-  await loadTier2(cli, project, sections, opts);
-
-  if (opts.tier === "default") {
-    return formatOutput(project, sections);
-  }
-
-  // Tier 3 (focus mode): Full content for matching notes
-  if (opts.tier === "focus" && opts.focus) {
-    await loadFocused(cli, project, sections, opts.focus);
-    return formatOutput(project, sections);
-  }
-
-  // Full mode: Everything (backwards compatible)
-  await loadFull(cli, project, sections, opts);
-  return formatOutput(project, sections);
 }
 
 function formatOutput(project: string, sections: string[]): string {
@@ -88,432 +86,237 @@ function formatOutput(project: string, sections: string[]): string {
 
 // ── Tier 1: Always loaded (~500 tokens) ──────────────────────
 
-async function loadTier1(
-  cli: ObsidianCLI,
+function loadTier1(
+  store: MemoryStore,
   project: string,
-  sections: string[]
-): Promise<void> {
-  // Project summary — extract first paragraph from context.md
-  try {
-    const context = await cli.read({
-      path: `Memory/Projects/${project}/context.md`,
-    });
-    const summary = extractSummary(context);
-    sections.push("## Project\n\n" + summary);
-  } catch {
-    sections.push("## Project\n\n_No project context found._");
-  }
+  sections: string[],
+): void {
+  sections.push(`## Project\n\n**${project}**`);
 
-  // Current state + blockers from progress.md
-  try {
-    const progress = await cli.read({
-      path: `Memory/Projects/${project}/progress.md`,
-    });
-    const compact = extractProgressCompact(progress);
-    if (compact) sections.push("## Current State\n\n" + compact);
-  } catch {
-    // optional
-  }
+  // Last session's summary + next steps + blockers
+  const recent = store.listSessions({ limit: 1, archived: false });
+  if (recent.length > 0) {
+    const last = recent[0];
+    const parts: string[] = [];
+    parts.push(`**Last session** (${last.date}, ${last.agent}): ${last.summary}`);
 
-  // Last session's next steps (most recent session only)
-  try {
-    const results = await cli.search(project, {
-      path: "Memory/Sessions/",
-      limit: 1,
-    });
-    if (results.length > 0) {
-      const content = await cli.read({ path: results[0].path });
-      const nextSteps = extractSection(content, "Next Steps");
-      const summary = extractSection(content, "Summary");
-      if (summary || nextSteps) {
-        const parts: string[] = [];
-        if (summary) parts.push(`**Last session:** ${summary.trim()}`);
-        if (nextSteps) parts.push(`**Pending next steps:**\n${nextSteps}`);
-        sections.push("## Continuity\n\n" + parts.join("\n\n"));
-      }
+    if (last.blockers.length > 0) {
+      parts.push(`**Blockers:**\n${last.blockers.map((b) => `- ${b}`).join("\n")}`);
     }
-  } catch {
-    // optional
+    if (last.nextSteps.length > 0) {
+      parts.push(`**Pending next steps:**\n${last.nextSteps.map((n) => `- ${n}`).join("\n")}`);
+    }
+    sections.push("## Continuity\n\n" + parts.join("\n\n"));
   }
 }
 
 // ── Tier 2: Compact indexes (~2000 tokens) ───────────────────
 
-async function loadTier2(
-  cli: ObsidianCLI,
-  project: string,
+function loadTier2(
+  store: MemoryStore,
   sections: string[],
-  opts: LoadContextDefaults
-): Promise<void> {
-  // Feature index (one-line per feature)
-  try {
-    const featuresDoc = await cli.read({
-      path: `Memory/Projects/${project}/Docs/Features.md`,
-    });
-    const index = extractSection(featuresDoc, "Feature Index");
-    if (index?.trim()) {
-      sections.push("## Features\n\n" + index.trim());
-    }
-  } catch {}
+  opts: LoadContextDefaults,
+): void {
+  // Feature index
+  const features = store.listFeatures();
+  if (features.length > 0) {
+    const featureLines = features.map(
+      (f) => `- **${f.slug}**: ${f.title} [${f.status}]`,
+    );
+    sections.push("## Features\n\n" + featureLines.join("\n"));
+  }
 
-  // Decision index (one-line per ADR)
+  // Decision index
   if (opts.includeDecisions) {
-    try {
-      const decisionsDoc = await cli.read({
-        path: `Memory/Projects/${project}/decisions.md`,
-      });
-      // Extract ADR wikilinks from anywhere in the file (prepend adds them at top)
-      const adrLinks = decisionsDoc
-        .split("\n")
-        .filter((line) => /^\s*-\s*\[\[ADRs\/ADR-/.test(line))
-        .join("\n");
-      if (adrLinks) {
-        sections.push("## Decisions\n\n" + adrLinks);
-      } else {
-        // Backwards compat: old inline format
-        sections.push("## Decisions\n\n" + decisionsDoc);
-      }
-    } catch {}
-  }
-
-  // Module index (directory → purpose, one-line each)
-  try {
-    const modulesDocs = await cli.read({
-      path: `Memory/Projects/${project}/Docs/Modules.md`,
-    });
-    const moduleIndex = extractSection(modulesDocs, "Module Index");
-    if (moduleIndex?.trim()) {
-      sections.push("## Modules\n\n" + moduleIndex.trim());
+    const decisions = store.listDecisions();
+    if (decisions.length > 0) {
+      const decisionLines = decisions.map(
+        (d) => `- ADR-${String(d.adrNumber).padStart(3, "0")}: ${d.title} [${d.status}]`,
+      );
+      sections.push("## Decisions\n\n" + decisionLines.join("\n"));
     }
-  } catch {}
-
-  // Recent sessions (one-line summaries, not full content)
-  if (opts.includeSessions > 0) {
-    try {
-      const results = await cli.search(project, {
-        path: `Memory/Sessions/${project}/`,
-        limit: opts.includeSessions,
-      });
-      if (results.length > 0) {
-        const lines: string[] = [];
-        for (const result of results) {
-          try {
-            const content = await cli.read({ path: result.path });
-            const summary = extractSection(content, "Summary");
-            const filename = result.path.split("/").pop() || "";
-            lines.push(
-              `- [[${filename}]]: ${truncate(summary?.trim() || "No summary", 120)}`
-            );
-          } catch {}
-        }
-        if (lines.length > 0) {
-          sections.push("## Recent Sessions\n\n" + lines.join("\n"));
-        }
-      }
-    } catch {}
   }
 
-  // Conventions (compact, if enabled)
-  if (opts.includeConventions) {
-    try {
-      const results = await cli.search("convention", {
-        path: "Memory/Conventions/",
-      });
-      for (const result of results.slice(0, 3)) {
-        try {
-          const content = await cli.read({ path: result.path });
-          sections.push("## Convention\n\n" + truncate(content, 500));
-        } catch {}
-      }
-    } catch {}
+  // Recent sessions (one-line summaries)
+  if (opts.includeSessions > 0) {
+    const sessions = store.listSessions({
+      limit: opts.includeSessions,
+      archived: false,
+    });
+    if (sessions.length > 0) {
+      const sessionLines = sessions.map(
+        (s) => `- ${s.id}: ${truncate(s.summary, 120)}`,
+      );
+      sections.push("## Recent Sessions\n\n" + sessionLines.join("\n"));
+    }
   }
 }
 
 // ── Focus loader: keyword-filtered deep content ──────────────
 
-async function loadFocused(
-  cli: ObsidianCLI,
-  project: string,
+function loadFocused(
+  store: MemoryStore,
   sections: string[],
-  keyword: string
-): Promise<void> {
-  // Search across all project memory for matching notes
-  const results = await cli.search(keyword, {
-    path: `Memory/Projects/${project}/`,
-    limit: 10,
-  });
+  keyword: string,
+): void {
+  // Search sessions by keyword
+  const sessionResults = store.searchSessionsFTS(keyword, 10);
 
-  // Also search sessions
-  const sessionResults = await cli.search(keyword, {
-    path: "Memory/Sessions/",
-    limit: 5,
-  });
+  // Search events by keyword
+  const eventResults = store.searchEventsFTS(keyword, undefined, 10);
 
-  const allResults = [...results, ...sessionResults];
-
-  if (allResults.length === 0) {
+  if (sessionResults.length === 0 && eventResults.length === 0) {
     sections.push(`## Focus: "${keyword}"\n\n_No matching notes found._`);
     return;
   }
 
   const focusedSections: string[] = [];
-  for (const result of allResults) {
-    try {
-      const content = await cli.read({ path: result.path });
-      const filename = result.path.split("/").pop() || "";
-      focusedSections.push(`### ${filename}\n\n${content}`);
-    } catch {}
+
+  for (const result of sessionResults) {
+    const session = store.getSession(result.id);
+    if (!session) continue;
+    focusedSections.push(`### ${session.id}\n\n${session.content}`);
   }
 
-  if (focusedSections.length > 0) {
-    sections.push(
-      `## Focus: "${keyword}" (${focusedSections.length} notes)\n\n` +
-        focusedSections.join("\n\n---\n\n")
+  if (eventResults.length > 0) {
+    const eventLines = eventResults.map(
+      (e) => `- **${e.subject}** ${e.action} ${e.object} (${e.date})`,
     );
+    focusedSections.push(`### Matching Events\n\n${eventLines.join("\n")}`);
   }
+
+  sections.push(
+    `## Focus: "${keyword}" (${sessionResults.length} sessions, ${eventResults.length} events)\n\n` +
+      focusedSections.join("\n\n---\n\n"),
+  );
 }
 
-// ── Full loader: everything (backwards compatible) ───────────
+// ── Full loader: everything ──────────────────────────────────
 
-async function loadFull(
-  cli: ObsidianCLI,
-  project: string,
+function loadFull(
+  store: MemoryStore,
   sections: string[],
-  opts: LoadContextDefaults
-): Promise<void> {
-  // Full project context (entire context.md)
-  try {
-    const context = await cli.read({
-      path: `Memory/Projects/${project}/context.md`,
-    });
-    const projectIdx = sections.findIndex((s) => s.startsWith("## Project"));
-    if (projectIdx !== -1) {
-      sections[projectIdx] = "## Project Context\n\n" + context;
-    }
-  } catch {}
-
-  // Full progress file
-  try {
-    const progress = await cli.read({
-      path: `Memory/Projects/${project}/progress.md`,
-    });
-    const stateIdx = sections.findIndex((s) =>
-      s.startsWith("## Current State")
-    );
-    if (stateIdx !== -1) {
-      sections[stateIdx] = "## Progress\n\n" + progress;
-    }
-  } catch {}
-
-  // Full module documentation
-  try {
-    const modulesDocs = await cli.read({
-      path: `Memory/Projects/${project}/Docs/Modules.md`,
-    });
-    sections.push("## Module Documentation\n\n" + modulesDocs);
-  } catch {}
-
-  // Full session content (replace one-line summaries with full notes)
+  opts: LoadContextDefaults,
+): void {
+  // Replace tier 2 session summaries with full content
   if (opts.includeSessions > 0) {
-    try {
-      const results = await cli.search(project, {
-        path: `Memory/Sessions/${project}/`,
-        limit: opts.includeSessions,
-      });
-      const sessionContent: string[] = [];
-      for (const result of results) {
-        try {
-          const content = await cli.read({ path: result.path });
-          // Skip archived sessions (distilled into journal entries)
-          if (content.includes("archived: true")) continue;
-          sessionContent.push(content);
-        } catch {}
+    const sessions = store.listSessions({
+      limit: opts.includeSessions,
+      archived: false,
+    });
+    const sessionContent = sessions
+      .map((s) => s.content)
+      .filter(Boolean);
+
+    if (sessionContent.length > 0) {
+      // Replace the existing "Recent Sessions" section
+      const sessIdx = sections.findIndex((s) => s.startsWith("## Recent Sessions"));
+      const fullSection = "## Recent Sessions\n\n" + sessionContent.join("\n\n---\n\n");
+      if (sessIdx !== -1) {
+        sections[sessIdx] = fullSection;
+      } else {
+        sections.push(fullSection);
       }
-      if (sessionContent.length > 0) {
-        const sessIdx = sections.findIndex((s) =>
-          s.startsWith("## Recent Sessions")
-        );
-        if (sessIdx !== -1) {
-          sections[sessIdx] =
-            "## Recent Sessions\n\n" + sessionContent.join("\n\n---\n\n");
-        }
-      }
-    } catch {}
+    }
   }
 }
 
-// ── Task-aware tier: dynamic retrieval guidance + hybrid search ──
-
-const RETRIEVAL_GUIDANCE_PROMPT = `You are a retrieval guidance generator for a coding project's memory system.
-
-Given a task description, generate search keywords and topics that should be used to find relevant context from the project's memory vault (session notes, decisions, events, documentation).
-
-## Task Description
-{TASK}
-
----
-
-Return a JSON object:
-{
-  "keywords": ["3-5 specific search keywords/phrases relevant to this task"],
-  "topics": ["2-3 broader topic areas to search"],
-  "timeframe": "recent|all"
-}
-
-Rules:
-- Keywords should be concrete technical terms (function names, module names, patterns)
-- Topics should be broader domain areas (authentication, database, testing)
-- Return ONLY valid JSON, no markdown fences`;
-
-interface RetrievalGuidance {
-  keywords: string[];
-  topics: string[];
-  timeframe: "recent" | "all";
-}
+// ── Task-aware tier: dynamic retrieval ───────────────────────
 
 async function loadTaskAware(
-  cli: ObsidianCLI,
-  project: string,
-  vaultPath: string,
+  store: MemoryStore,
+  configDir: string,
+  _project: string,
   taskDescription: string,
   sections: string[],
   opts: LoadContextDefaults,
 ): Promise<void> {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    // Fallback to default tier
-    await loadTier2(cli, project, sections, opts);
-    return;
+
+  // Expand query (LLM-powered if available)
+  const expanded = await expandQuery(taskDescription, apiKey);
+
+  // Load embeddings + embed query if available
+  const embPath = getEmbeddingsPath(configDir);
+  const embIndex = await loadEmbeddingsFile(embPath);
+  let queryVector: Float32Array | null = null;
+  if (apiKey && embIndex) {
+    try {
+      const vec = await embedQuery(taskDescription, apiKey);
+      if (vec.length > 0) queryVector = new Float32Array(vec);
+    } catch { /* keyword only */ }
   }
 
-  // Step 1: Generate retrieval guidance
-  let guidance: RetrievalGuidance;
-  try {
-    const prompt = RETRIEVAL_GUIDANCE_PROMPT.replace("{TASK}", taskDescription);
-    guidance = await callLLMJson<RetrievalGuidance>(prompt);
-  } catch {
-    // Fallback if LLM fails
-    guidance = {
-      keywords: taskDescription.split(/\s+/).slice(0, 5),
-      topics: [],
-      timeframe: "recent",
-    };
+  // Search events
+  const eventResults = store.searchEventsFTS(
+    expanded.terms.join(" OR "),
+    expanded.timeframe,
+    10,
+  );
+
+  if (eventResults.length > 0) {
+    const eventLines = eventResults.map(
+      (e) => `- **${e.subject}** ${e.action} ${e.object} (${e.date})`,
+    );
+    sections.push(`## Relevant Events\n\n${eventLines.join("\n")}`);
   }
 
-  // Step 2: Search events by guided keywords
-  const allEvents = await readEvents(vaultPath, project, {
-    since: guidance.timeframe === "recent"
-      ? new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0]
-      : undefined,
+  // Hybrid search for sessions
+  const results = hybridSearch(store, expanded, embIndex, queryVector, {
+    limit: 5,
+    target: "sessions",
   });
 
-  const allQueryTerms = [...guidance.keywords, ...guidance.topics].join(" ");
-  const relevantEvents = searchEvents(allEvents, allQueryTerms);
-
-  if (relevantEvents.length > 0) {
-    const eventSection = formatEventTimeline(relevantEvents.slice(0, 10));
-    sections.push(`## Relevant Events\n\n${eventSection}`);
-  }
-
-  // Step 3: Hybrid search sessions using guided queries
-  const searchQueries = [taskDescription, ...guidance.keywords.slice(0, 2)];
-  const sessionPaths = new Set<string>();
-
-  for (const query of searchQueries) {
-    // Decouple vector and keyword search so one failure doesn't block the other
-    let vectorResults: Array<{ path: string; score: number }> = [];
-    try {
-      vectorResults = await vectorSearch(vaultPath, query, apiKey, 5);
-    } catch {
-      // Vector search failed — continue with keyword only
-    }
-
-    try {
-      const keywordResults = await cli.search(query, {
-        path: `Memory/Sessions/${project}/`,
-        limit: 5,
-      });
-
-      const fused = reciprocalRankFusion(
-        keywordResults.map((r) => r.path),
-        vectorResults.filter((r) => r.path.includes(`Sessions/${project}/`)),
-      );
-
-      for (const result of fused.slice(0, 3)) {
-        sessionPaths.add(result.path);
-      }
-    } catch {
-      // Continue with other queries
+  // Also include sessions from matched events
+  const sessionIds = new Set(results.map((r) => r.id));
+  for (const event of eventResults.slice(0, 5)) {
+    if (event.sessionId && !sessionIds.has(event.sessionId)) {
+      sessionIds.add(event.sessionId);
     }
   }
 
-  // Also add sessions referenced by relevant events
-  for (const event of relevantEvents.slice(0, 5)) {
-    if (event.source) sessionPaths.add(event.source);
+  // Load session content
+  const sessionSections: string[] = [];
+  for (const id of sessionIds) {
+    const session = store.getSession(id);
+    if (!session) continue;
+    const parts: string[] = [`### ${session.id}`];
+    parts.push(session.summary);
+    if (session.decisions.length > 0) {
+      parts.push(`**Decisions:** ${session.decisions.join("; ")}`);
+    }
+    sessionSections.push(parts.join("\n"));
   }
 
-  // Step 4: Load matched session content
-  if (sessionPaths.size > 0) {
-    const sessionSections: string[] = [];
-    for (const path of Array.from(sessionPaths).slice(0, 5)) {
-      try {
-        const content = await cli.read({ path });
-        const summary = extractSection(content, "Summary");
-        const decisions = extractSection(content, "Decisions Made");
-        const filename = path.split("/").pop() || "";
-
-        const parts: string[] = [`### ${filename}`];
-        if (summary) parts.push(summary.trim());
-        if (decisions) parts.push(`**Decisions:** ${decisions.trim()}`);
-        sessionSections.push(parts.join("\n"));
-      } catch {
-        // Skip unreadable sessions
-      }
-    }
-
-    if (sessionSections.length > 0) {
-      sections.push(
-        `## Relevant Sessions (${sessionSections.length} found)\n\n` +
+  if (sessionSections.length > 0) {
+    sections.push(
+      `## Relevant Sessions (${sessionSections.length} found)\n\n` +
         sessionSections.join("\n\n---\n\n"),
-      );
-    }
+    );
   }
 
-  // Step 5: Also load decisions (always useful context)
+  // Decisions
   if (opts.includeDecisions) {
-    try {
-      const decisionsDoc = await cli.read({
-        path: `Memory/Projects/${project}/decisions.md`,
-      });
-      const adrLinks = decisionsDoc
-        .split("\n")
-        .filter((line) => /^\s*-\s*\[\[ADRs\/ADR-/.test(line))
-        .join("\n");
-      if (adrLinks) {
-        sections.push("## Decisions\n\n" + adrLinks);
-      }
-    } catch {
-      // optional
+    const decisions = store.listDecisions();
+    if (decisions.length > 0) {
+      const decisionLines = decisions.map(
+        (d) => `- ADR-${String(d.adrNumber).padStart(3, "0")}: ${d.title} [${d.status}]`,
+      );
+      sections.push("## Decisions\n\n" + decisionLines.join("\n"));
     }
   }
 
-  // Step 6: Add task framing at the beginning
+  // Task framing
   sections.unshift(
-    `## Task Context\n\n**Task:** ${taskDescription}\n**Retrieval focus:** ${guidance.keywords.join(", ")}`,
+    `## Task Context\n\n**Task:** ${taskDescription}\n**Retrieval focus:** ${expanded.terms.join(", ")}`,
   );
 }
 
-// ── Helper functions ─────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 
-/**
- * Extract the first meaningful paragraph from a note (skipping frontmatter and headers).
- */
 export function extractSummary(content: string): string {
-  // Strip frontmatter
   const stripped = content.replace(/^---[\s\S]*?---\n*/, "");
-  // Strip the first H1 header
   const noH1 = stripped.replace(/^# .+\n*/, "");
-  // Find first paragraph (non-empty line that isn't a header or list)
   const lines = noH1.split("\n");
   const paragraphLines: string[] = [];
   let inParagraph = false;
@@ -536,9 +339,6 @@ export function extractSummary(content: string): string {
   return paragraphLines.join("\n") || "_No summary available._";
 }
 
-/**
- * Extract compact progress: Current State + Blockers only.
- */
 export function extractProgressCompact(content: string): string | null {
   const currentState = extractSection(content, "Current State");
   const blockers = extractSection(content, "Blockers");
@@ -550,12 +350,9 @@ export function extractProgressCompact(content: string): string | null {
   return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
-/**
- * Extract content under a ## heading until the next ## or end of file.
- */
 export function extractSection(
   content: string,
-  heading: string
+  heading: string,
 ): string | null {
   const regex = new RegExp(`## ${heading}\\n([\\s\\S]*?)(?=\\n## |\\n---|$)`);
   const match = content.match(regex);

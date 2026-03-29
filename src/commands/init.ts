@@ -1,6 +1,6 @@
 import { join } from "path";
 import { access, mkdir } from "fs/promises";
-import { writeConfig } from "../lib/config";
+import { writeConfig, openStore } from "../lib/config";
 import { getVaultStructure } from "../lib/vault";
 import { generateAgentsMd } from "../templates/agents-md";
 import { generateClaudeCodeConfig, getClaudeCodeConfigPath } from "../lib/agents/claude-code";
@@ -43,11 +43,12 @@ export interface InitOptions {
   vault: string;
   project: string;
   agents: AgentId[];
-  vaultPath?: string; // filesystem path to create vault structure
+  vaultPath?: string;
 }
 
 export interface InitResult {
   configWritten: boolean;
+  dbCreated: boolean;
   agentsMdWritten: boolean;
   agentConfigs: { agent: AgentId; path: string }[];
   vaultStructureCreated: boolean;
@@ -57,10 +58,11 @@ export interface InitResult {
 
 export async function runInit(
   projectDir: string,
-  options: InitOptions
+  options: InitOptions,
 ): Promise<InitResult> {
   const result: InitResult = {
     configWritten: false,
+    dbCreated: false,
     agentsMdWritten: false,
     agentConfigs: [],
     vaultStructureCreated: false,
@@ -68,7 +70,7 @@ export async function runInit(
     vaultFiles: 0,
   };
 
-  // Write .obsidian-memory.json
+  // Write config to .obsidian-memory/config.json
   await writeConfig(projectDir, {
     vault: options.vault,
     project: options.project,
@@ -77,7 +79,16 @@ export async function runInit(
   });
   result.configWritten = true;
 
-  // Generate and write AGENTS.md (append if existing)
+  // Create SQLite database (opens and initializes schema)
+  const store = openStore(projectDir, {
+    vault: options.vault,
+    project: options.project,
+    agents: options.agents,
+  });
+  store.close();
+  result.dbCreated = true;
+
+  // Generate and write AGENTS.md
   const agentsMd = generateAgentsMd(options.project, options.vault);
   const agentsMdPath = join(projectDir, "AGENTS.md");
   const existingAgentsMd = Bun.file(agentsMdPath);
@@ -87,7 +98,6 @@ export async function runInit(
       await Bun.write(agentsMdPath, existingContent.trimEnd() + "\n\n" + agentsMd);
       result.agentsMdWritten = true;
     }
-    // Already contains obsidian-memory config — skip
   } else {
     await Bun.write(agentsMdPath, agentsMd);
     result.agentsMdWritten = true;
@@ -101,7 +111,7 @@ export async function runInit(
     }
   }
 
-  // Create vault structure if path provided
+  // Create vault structure if path provided (for optional Obsidian sync)
   if (options.vaultPath) {
     const structure = getVaultStructure(options.project);
 
@@ -125,7 +135,7 @@ export async function runInit(
 
 async function writeAgentConfig(
   projectDir: string,
-  agentId: AgentId
+  agentId: AgentId,
 ): Promise<{ agent: AgentId; path: string } | null> {
   let content: string;
   let configPath: string;
@@ -134,7 +144,6 @@ async function writeAgentConfig(
     case "claude-code": {
       content = generateClaudeCodeConfig();
       configPath = getClaudeCodeConfigPath();
-      // Append to existing CLAUDE.md if it exists
       const existing = Bun.file(join(projectDir, configPath));
       if (await existing.exists()) {
         const existingContent = await existing.text();
@@ -182,7 +191,8 @@ export function formatInitResult(result: InitResult): string {
   const lines: string[] = [];
   lines.push("obsidian-memory initialized successfully!\n");
 
-  if (result.configWritten) lines.push("  .obsidian-memory.json written");
+  if (result.configWritten) lines.push("  .obsidian-memory/config.json written");
+  if (result.dbCreated) lines.push("  .obsidian-memory/memory.db created");
   if (result.agentsMdWritten) lines.push("  AGENTS.md generated");
 
   for (const ac of result.agentConfigs) {
@@ -191,13 +201,13 @@ export function formatInitResult(result: InitResult): string {
 
   if (result.vaultStructureCreated) {
     lines.push(
-      `\n  Vault structure created: ${result.vaultFolders} folders, ${result.vaultFiles} files`
+      `\n  Vault structure created: ${result.vaultFolders} folders, ${result.vaultFiles} files`,
     );
   }
 
   lines.push("\nNext steps:");
-  lines.push("  1. Open the vault in Obsidian");
-  lines.push("  2. Start an AI agent session — it will read AGENTS.md and use memory automatically");
+  lines.push("  1. Start an AI agent session — it will read AGENTS.md and use memory automatically");
+  lines.push("  2. (Optional) Run `obsidian-memory sync` to export to Obsidian vault");
 
   return lines.join("\n");
 }
