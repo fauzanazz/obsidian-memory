@@ -58,7 +58,7 @@ export async function runSaveSession(
     });
   });
 
-  // Async: LLM enrichment (fire-and-forget with timeout)
+  // Async: LLM enrichment with timeout
   const apiKey = process.env[llm?.apiKeyEnv ?? "GEMINI_API_KEY"];
   if (apiKey) {
     const enrichPromise = enrichSessionAsync(
@@ -69,14 +69,16 @@ export async function runSaveSession(
       content,
       apiKey,
       llm,
-    );
+    ).catch(() => {});
     const timeoutPromise = new Promise<void>((resolve) =>
       setTimeout(resolve, ENRICHMENT_TIMEOUT_MS),
     );
     await Promise.race([enrichPromise, timeoutPromise]);
+    await enrichPromise.finally(() => store.close());
+  } else {
+    store.close();
   }
 
-  store.close();
   return sessionId;
 }
 

@@ -23,33 +23,36 @@ export async function runSearch(
   }
 
   const store = openStore(found.dir, found.config);
-  const apiKey = process.env.GEMINI_API_KEY;
+  try {
+    const apiKey = process.env.GEMINI_API_KEY;
 
-  // Expand query (LLM-powered if API key available)
-  const expanded = await expandQuery(query, apiKey);
+    // Expand query (LLM-powered if API key available)
+    const expanded = await expandQuery(query, apiKey);
 
-  // Load embeddings + embed query if available
-  const embPath = getEmbeddingsPath(found.dir);
-  const embIndex = await loadEmbeddingsFile(embPath);
-  let queryVector: Float32Array | null = null;
-  if (apiKey && embIndex) {
-    try {
-      const vec = await embedQuery(query, apiKey);
-      if (vec.length > 0) queryVector = new Float32Array(vec);
-    } catch {
-      // Vector search unavailable — keyword only
+    // Load embeddings + embed query if available
+    const embPath = getEmbeddingsPath(found.dir);
+    const embIndex = await loadEmbeddingsFile(embPath);
+    let queryVector: Float32Array | null = null;
+    if (apiKey && embIndex) {
+      try {
+        const vec = await embedQuery(query, apiKey);
+        if (vec.length > 0) queryVector = new Float32Array(vec);
+      } catch {
+        // Vector search unavailable — keyword only
+      }
     }
+
+    const results = hybridSearch(store, expanded, embIndex, queryVector, {
+      limit: options?.limit,
+      target: "all",
+    });
+
+    const provider = queryVector ? "hybrid (keyword + vector)" : "keyword (FTS5)";
+
+    return { results, provider };
+  } finally {
+    store.close();
   }
-
-  const results = hybridSearch(store, expanded, embIndex, queryVector, {
-    limit: options?.limit,
-    target: "all",
-  });
-
-  const provider = queryVector ? "hybrid (keyword + vector)" : "keyword (FTS5)";
-
-  store.close();
-  return { results, provider };
 }
 
 export function formatSearchResults(

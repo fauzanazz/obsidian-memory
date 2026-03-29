@@ -75,7 +75,7 @@ export async function runTimeline(
   const since = options.last ? parseDuration(options.last) : options.since;
   const until = options.until;
 
-  const events = store.getEventsByDate(since, until);
+  const events = store.getEventsByDate(since, until, project);
 
   if (events.length === 0) {
     const rangeStr = since ? ` since ${since}` : "";

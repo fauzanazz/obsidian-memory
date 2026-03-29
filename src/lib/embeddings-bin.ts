@@ -27,7 +27,7 @@ const HEADER_BYTES = 12; // 3 × u32
 
 export function contentHash(text: string): Uint8Array {
   const full = createHash("sha256").update(text).digest();
-  return new Uint8Array(full.buffer, full.byteOffset, HASH_BYTES);
+  return new Uint8Array(Buffer.from(full).buffer, 0, HASH_BYTES);
 }
 
 // ---------------------------------------------------------------------------
@@ -196,6 +196,12 @@ export function addEntry(
   hash: Uint8Array,
   vector: Float32Array,
 ): BinEmbeddingIndex {
+  if (vector.length !== index.dimension) {
+    throw new Error(
+      `Vector length ${vector.length} does not match index dimension ${index.dimension}`,
+    );
+  }
+
   // Rebuild entries list with the new/updated entry
   const allEntries: Array<{
     key: string;

@@ -413,9 +413,9 @@ export class MemoryStore {
     }));
   }
 
-  getEventsByDate(since?: string, until?: string): EventResult[] {
+  getEventsByDate(since?: string, until?: string, project?: string): EventResult[] {
     const conditions: string[] = ["project = ?"];
-    const params: SQLQueryBindings[] =[this.project];
+    const params: SQLQueryBindings[] =[project ?? this.project];
 
     if (since) {
       conditions.push("date >= ?");
@@ -479,6 +479,20 @@ export class MemoryStore {
       .get(id);
   }
 
+  getDecisionByADRNumber(adrNumber: number): DecisionRow | null {
+    return this.db
+      .query<DecisionRow, [string, number]>(
+        "SELECT * FROM decisions WHERE project = ? AND adr_number = ?",
+      )
+      .get(this.project, adrNumber);
+  }
+
+  updateDecisionStatus(id: string, status: string): void {
+    this.db
+      .query("UPDATE decisions SET status = ? WHERE id = ?")
+      .run(status, id);
+  }
+
   listDecisions(): DecisionSummary[] {
     const rows = this.db
       .query<DecisionRow, [string]>(
@@ -526,6 +540,38 @@ export class MemoryStore {
   }
 
   // -------------------------------------------------------------------------
+  // Counts (lightweight alternatives to full-table loads)
+  // -------------------------------------------------------------------------
+
+  countSessions(): number {
+    const row = this.db
+      .query<{ cnt: number }, [string]>("SELECT COUNT(*) as cnt FROM sessions WHERE project = ?")
+      .get(this.project);
+    return row?.cnt ?? 0;
+  }
+
+  countEvents(): number {
+    const row = this.db
+      .query<{ cnt: number }, [string]>("SELECT COUNT(*) as cnt FROM events WHERE project = ?")
+      .get(this.project);
+    return row?.cnt ?? 0;
+  }
+
+  countDecisions(): number {
+    const row = this.db
+      .query<{ cnt: number }, [string]>("SELECT COUNT(*) as cnt FROM decisions WHERE project = ?")
+      .get(this.project);
+    return row?.cnt ?? 0;
+  }
+
+  countFeatures(): number {
+    const row = this.db
+      .query<{ cnt: number }, [string]>("SELECT COUNT(*) as cnt FROM features WHERE project = ?")
+      .get(this.project);
+    return row?.cnt ?? 0;
+  }
+
+  // -------------------------------------------------------------------------
   // FTS5 search across sessions
   // -------------------------------------------------------------------------
 
@@ -536,10 +582,11 @@ export class MemoryStore {
     const terms = query.split(/\s+/).filter(Boolean);
     if (terms.length === 0) return [];
 
-    const conditions = terms.map(() => "(summary LIKE ? OR content LIKE ?)");
+    const conditions = terms.map(() => "(summary LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')");
     const params: SQLQueryBindings[] =[];
     for (const term of terms) {
-      const pattern = `%${term}%`;
+      const escaped = term.replace(/[%_]/g, "\\$&");
+      const pattern = `%${escaped}%`;
       params.push(pattern, pattern);
     }
     params.push(this.project, maxResults);

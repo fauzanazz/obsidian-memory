@@ -85,8 +85,10 @@ export function hybridSearch(
       ? store.searchSessionsFTS(query.terms.join(" "), fetchLimit)
       : [];
 
+  const hasTerms = query.terms.some((t) => t.trim().length > 0);
+
   const keywordEvents =
-    target !== "sessions"
+    target !== "sessions" && hasTerms
       ? store.searchEventsFTS(
           query.terms.join(" OR "),
           query.timeframe,

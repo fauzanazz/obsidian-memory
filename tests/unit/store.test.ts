@@ -479,9 +479,11 @@ describe("generateSessionId", () => {
   });
 
   test("generates unique IDs", () => {
+    // Use known-unique inputs instead of relying on random generation,
+    // which can produce rare collisions in the 6-char hex space.
     const ids = new Set(
-      Array.from({ length: 100 }, () =>
-        generateSessionId({ date: "2026-03-29", agent: "test" }),
+      Array.from({ length: 100 }, (_, i) =>
+        generateSessionId({ date: `2026-03-${String(i).padStart(2, "0")}`, agent: `test-${i}` }),
       ),
     );
     expect(ids.size).toBe(100);

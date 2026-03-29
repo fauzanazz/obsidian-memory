@@ -62,7 +62,12 @@ export async function runQuery(
 
   // 2. Find related sessions via hybrid search
   const embPath = getEmbeddingsPath(found.dir);
-  const embIndex = await loadEmbeddingsFile(embPath);
+  let embIndex: Awaited<ReturnType<typeof loadEmbeddingsFile>> = null;
+  try {
+    embIndex = await loadEmbeddingsFile(embPath);
+  } catch {
+    // Corrupt or unreadable embeddings file — fall back to keyword-only search
+  }
   let queryVector: Float32Array | null = null;
   if (apiKey && embIndex) {
     try {

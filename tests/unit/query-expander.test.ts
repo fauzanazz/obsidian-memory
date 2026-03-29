@@ -1,7 +1,23 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { expandQuery } from "../../src/lib/query-expander";
 
 describe("expandQuery", () => {
+  // Ensure no real LLM env vars leak into tests
+  let savedGeminiKey: string | undefined;
+
+  beforeEach(() => {
+    savedGeminiKey = process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+  });
+
+  afterEach(() => {
+    if (savedGeminiKey !== undefined) {
+      process.env.GEMINI_API_KEY = savedGeminiKey;
+    } else {
+      delete process.env.GEMINI_API_KEY;
+    }
+  });
+
   test("without API key: splits on whitespace", async () => {
     const result = await expandQuery("JWT authentication flow");
     expect(result.terms).toEqual(["JWT", "authentication", "flow"]);
@@ -29,13 +45,19 @@ describe("expandQuery", () => {
     expect(result.original).toBe("test query");
   });
 
-  // LLM-dependent tests would require mocking fetch.
-  // We test the graceful fallback path here.
+  // Mock fetch so the test never hits a real network endpoint.
   test("with invalid API key: falls back to raw terms", async () => {
-    // This will attempt an LLM call which should fail, then fall back
-    const result = await expandQuery("auth flow", "invalid-key");
-    // Should fall back to raw terms on error
-    expect(result.terms.length).toBeGreaterThan(0);
-    expect(result.original).toBe("auth flow");
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = mock(() =>
+      Promise.resolve(new Response("Unauthorized", { status: 401 })),
+    ) as unknown as typeof fetch;
+    try {
+      const result = await expandQuery("auth flow", "invalid-key");
+      // Should fall back to raw terms on error
+      expect(result.terms).toEqual(["auth", "flow"]);
+      expect(result.original).toBe("auth flow");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

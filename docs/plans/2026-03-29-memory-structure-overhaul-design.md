@@ -131,8 +131,11 @@ Path index (variable):
     content_hash: u8[16]          (truncated SHA-256)
 
 Vector block (count × dimension × 4 bytes):
-  Contiguous Float32Array
+  Contiguous Float32Array (4-byte aligned)
   Entry i starts at offset (i * dimension * 4)
+  Note: The path index has variable length, so writers MUST pad
+  with 0-3 zero bytes after the last path entry to ensure the
+  vector block starts at a 4-byte-aligned offset.
 ```
 
 ## 3-LLM Cascade
@@ -157,7 +160,7 @@ Hybrid search: FTS5 (BM25) + vector (cosine similarity) → Reciprocal Rank Fusi
 
 ## Graceful Degradation
 
-Every command works without an API key. LLM makes results richer, not possible.
+Every command works without an API key. LLM enrichment is optional — it makes results richer, but is never required.
 
 | Capability | With GEMINI_API_KEY | Without |
 |---|---|---|

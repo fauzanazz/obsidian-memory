@@ -32,10 +32,19 @@ export async function runSaveDecision(
     return { name: alt, proscons: "" };
   });
 
+  if (options.supersedes) {
+    const old = store.getDecisionByADRNumber(options.supersedes);
+    if (!old) {
+      store.close();
+      throw new Error(`Cannot supersede ADR-${String(options.supersedes).padStart(3, "0")}: not found.`);
+    }
+    store.updateDecisionStatus(old.id, "superseded");
+  }
+
   const { id, adrNumber } = store.insertDecision({
     project: found.config.project,
     title: options.title,
-    status: options.status,
+    status: options.status ?? (options.supersedes ? "accepted" : undefined),
     context: options.context,
     decision: options.decision,
     alternatives,

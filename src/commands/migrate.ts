@@ -58,7 +58,11 @@ export async function runMigrate(
     }
   } catch { /* sessions dir may not exist */ }
 
-  // 2. Migrate events from events.jsonl
+  // 2. Create a synthetic migration session to satisfy FK constraints for orphan events
+  const migrationSessionId = `migration-${project}-${Date.now()}`;
+  let migrationSessionCreated = false;
+
+  // 3. Migrate events from events.jsonl
   const eventsPath = join(vaultPath, "Memory", "Projects", project, "events.jsonl");
   try {
     const eventsText = await readFile(eventsPath, "utf-8");
@@ -66,9 +70,19 @@ export async function runMigrate(
       if (!line.trim()) continue;
       try {
         const event = JSON.parse(line);
+        if (!migrationSessionCreated) {
+          store.insertSession(migrationSessionId, {
+            project,
+            agent: "migration",
+            date: new Date().toISOString().split("T")[0],
+            summary: `Migrated events from vault: ${vaultPath}`,
+            content: `Synthetic session created during migration from ${vaultPath}`,
+          });
+          migrationSessionCreated = true;
+        }
         const record: EventRecord = {
           project,
-          sessionId: "", // no reliable way to link back
+          sessionId: migrationSessionId,
           date: event.date || "",
           subject: event.subject || "",
           action: event.action || "",
@@ -83,7 +97,7 @@ export async function runMigrate(
     }
   } catch { /* events.jsonl may not exist */ }
 
-  // 3. Migrate decisions (ADR notes)
+  // 4. Migrate decisions (ADR notes)
   const adrsDir = join(vaultPath, "Memory", "Projects", project, "ADRs");
   try {
     const files = await readdir(adrsDir);
@@ -100,7 +114,7 @@ export async function runMigrate(
     }
   } catch { /* ADRs dir may not exist */ }
 
-  // 4. Migrate features
+  // 5. Migrate features
   const featuresDir = join(vaultPath, "Memory", "Projects", project, "Features");
   try {
     const files = await readdir(featuresDir);
@@ -118,7 +132,7 @@ export async function runMigrate(
     }
   } catch { /* features dir may not exist */ }
 
-  // 5. Migrate embeddings from index.json → embeddings.bin
+  // 6. Migrate embeddings from index.json → embeddings.bin
   const indexJsonPath = join(vaultPath, "Memory", ".embeddings", "index.json");
   try {
     const indexText = await readFile(indexJsonPath, "utf-8");

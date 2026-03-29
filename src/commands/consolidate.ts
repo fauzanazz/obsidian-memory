@@ -104,12 +104,11 @@ export async function runConsolidate(
               });
             } catch { /* may already exist */ }
           }
+          // Archive sessions only after successful distillation
+          store.archiveSessions(sessions.map((s) => s.id));
         } catch (err) {
-          console.error(`[consolidate] Distillation failed: ${err instanceof Error ? err.message : err}`);
+          console.error(`[consolidate] Distillation failed for month ${_month}, skipping archive: ${err instanceof Error ? err.message : err}`);
         }
-
-        // Archive sessions
-        store.archiveSessions(sessions.map((s) => s.id));
       }
 
       store.close();

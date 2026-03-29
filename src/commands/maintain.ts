@@ -49,7 +49,7 @@ export async function runMaintain(
   let sessions;
   if (options.session) {
     const s = store.getSession(options.session);
-    sessions = s && !s.enriched ? [s] : [];
+    sessions = s && s.project === project && !s.enriched ? [s] : [];
   } else {
     sessions = store.listSessions({ archived: false }).filter((s) => !s.enriched);
   }

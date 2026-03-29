@@ -39,43 +39,42 @@ export async function runLoadContext(
   }
 
   const store = openStore(found.dir, found.config);
-  const project = found.config.project;
-  const sections: string[] = [];
+  try {
+    const project = found.config.project;
+    const sections: string[] = [];
 
-  // Tier 1: Always loaded
-  loadTier1(store, project, sections);
+    // Tier 1: Always loaded
+    loadTier1(store, project, sections);
 
-  if (opts.tier === "minimal") {
-    store.close();
+    if (opts.tier === "minimal") {
+      return formatOutput(project, sections);
+    }
+
+    // Task-aware tier
+    if (opts.tier === "task" && opts.taskDescription) {
+      await loadTaskAware(store, found.dir, project, opts.taskDescription, sections, opts);
+      return formatOutput(project, sections);
+    }
+
+    // Tier 2: Compact indexes
+    loadTier2(store, sections, opts);
+
+    if (opts.tier === "default") {
+      return formatOutput(project, sections);
+    }
+
+    // Tier 3 (focus mode): keyword-matched sessions and events
+    if (opts.tier === "focus" && opts.focus) {
+      loadFocused(store, sections, opts.focus);
+      return formatOutput(project, sections);
+    }
+
+    // Full mode: everything
+    loadFull(store, sections, opts);
     return formatOutput(project, sections);
-  }
-
-  // Task-aware tier
-  if (opts.tier === "task" && opts.taskDescription) {
-    await loadTaskAware(store, found.dir, project, opts.taskDescription, sections, opts);
+  } finally {
     store.close();
-    return formatOutput(project, sections);
   }
-
-  // Tier 2: Compact indexes
-  loadTier2(store, sections, opts);
-
-  if (opts.tier === "default") {
-    store.close();
-    return formatOutput(project, sections);
-  }
-
-  // Tier 3 (focus mode): keyword-matched sessions and events
-  if (opts.tier === "focus" && opts.focus) {
-    loadFocused(store, sections, opts.focus);
-    store.close();
-    return formatOutput(project, sections);
-  }
-
-  // Full mode: everything
-  loadFull(store, sections, opts);
-  store.close();
-  return formatOutput(project, sections);
 }
 
 function formatOutput(project: string, sections: string[]): string {

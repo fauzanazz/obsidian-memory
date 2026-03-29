@@ -48,10 +48,10 @@ export async function runStatus(cwd: string): Promise<StatusResult> {
     try {
       const { MemoryStore } = await import("../lib/store");
       const store = new MemoryStore(dbPath, found.config.project);
-      result.dbSessions = store.listSessions({ limit: 10000 }).length;
-      result.dbEvents = store.getEventsByDate().length;
-      result.dbDecisions = store.listDecisions().length;
-      result.dbFeatures = store.listFeatures().length;
+      result.dbSessions = store.countSessions();
+      result.dbEvents = store.countEvents();
+      result.dbDecisions = store.countDecisions();
+      result.dbFeatures = store.countFeatures();
       store.close();
     } catch {
       // DB may be corrupt
