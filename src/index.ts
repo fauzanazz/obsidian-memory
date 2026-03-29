@@ -16,6 +16,8 @@ import { detectAgents, runInit, formatInitResult, type AgentId } from "./command
 import { runTimeline } from "./commands/timeline";
 import { runQuery } from "./commands/query";
 import { runGet } from "./commands/get";
+import { runSync, formatSyncResult } from "./commands/sync";
+import { runMigrate } from "./commands/migrate";
 
 function parsePositiveInt(value: string): number | undefined {
   const n = parseInt(value, 10);
@@ -380,6 +382,38 @@ program
     try {
       const output = await runGet(process.cwd(), sessionId);
       console.log(output);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("sync")
+  .description("Export SQLite memory to Obsidian vault (markdown notes)")
+  .option("--vault-path <path>", "Override vault filesystem path")
+  .action(async (opts) => {
+    try {
+      const result = await runSync(process.cwd(), {
+        vaultPath: opts.vaultPath?.replace(/^~/, process.env.HOME || "~"),
+      });
+      console.log(formatSyncResult(result));
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("migrate")
+  .description("Import existing Obsidian vault into SQLite database")
+  .requiredOption("--from-vault <path>", "Filesystem path to the Obsidian vault")
+  .action(async (opts) => {
+    try {
+      const result = await runMigrate(process.cwd(), {
+        fromVault: opts.fromVault,
+      });
+      console.log(result.message);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);
       process.exit(1);
