@@ -585,7 +585,7 @@ export class MemoryStore {
     const conditions = terms.map(() => "(summary LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')");
     const params: SQLQueryBindings[] =[];
     for (const term of terms) {
-      const escaped = term.replace(/[%_]/g, "\\$&");
+      const escaped = term.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&");
       const pattern = `%${escaped}%`;
       params.push(pattern, pattern);
     }

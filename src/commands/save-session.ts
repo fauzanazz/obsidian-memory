@@ -74,7 +74,7 @@ export async function runSaveSession(
       setTimeout(resolve, ENRICHMENT_TIMEOUT_MS),
     );
     await Promise.race([enrichPromise, timeoutPromise]);
-    await enrichPromise.finally(() => store.close());
+    enrichPromise.finally(() => store.close());
   } else {
     store.close();
   }

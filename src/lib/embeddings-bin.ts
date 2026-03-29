@@ -27,7 +27,7 @@ const HEADER_BYTES = 12; // 3 × u32
 
 export function contentHash(text: string): Uint8Array {
   const full = createHash("sha256").update(text).digest();
-  return new Uint8Array(Buffer.from(full).buffer, 0, HASH_BYTES);
+  return new Uint8Array(full.buffer.slice(full.byteOffset, full.byteOffset + HASH_BYTES));
 }
 
 // ---------------------------------------------------------------------------

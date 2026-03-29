@@ -38,7 +38,6 @@ export async function runSaveDecision(
       store.close();
       throw new Error(`Cannot supersede ADR-${String(options.supersedes).padStart(3, "0")}: not found.`);
     }
-    store.updateDecisionStatus(old.id, "superseded");
   }
 
   const { id, adrNumber } = store.insertDecision({
@@ -52,6 +51,11 @@ export async function runSaveDecision(
     categories: options.categories,
     impacts: options.impacts,
   });
+
+  if (options.supersedes) {
+    const old = store.getDecisionByADRNumber(options.supersedes)!;
+    store.updateDecisionStatus(old.id, "superseded");
+  }
 
   store.close();
   return { id, adrNumber };

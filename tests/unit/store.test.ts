@@ -478,15 +478,13 @@ describe("generateSessionId", () => {
     expect(id).toMatch(/^2026-03-29-claude-code-[a-f0-9]{6}$/);
   });
 
-  test("generates unique IDs", () => {
-    // Use known-unique inputs instead of relying on random generation,
-    // which can produce rare collisions in the 6-char hex space.
+  test("generates unique IDs for identical inputs", () => {
     const ids = new Set(
-      Array.from({ length: 100 }, (_, i) =>
-        generateSessionId({ date: `2026-03-${String(i).padStart(2, "0")}`, agent: `test-${i}` }),
+      Array.from({ length: 5 }, () =>
+        generateSessionId({ date: "2026-03-29", agent: "test" }),
       ),
     );
-    expect(ids.size).toBe(100);
+    expect(ids.size).toBe(5);
   });
 });
 
