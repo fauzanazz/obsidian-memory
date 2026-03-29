@@ -1,8 +1,9 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
-import { findConfig } from "../lib/config";
-import { enrichSession, type EnrichmentResult } from "../lib/enricher";
-import { runSaveFeature } from "./save-feature";
-import { runSaveDecision } from "./save-decision";
+import { findConfig, openStore, getEmbeddingsPath } from "../lib/config";
+import { enrichSession } from "../lib/enricher";
+import { extractEvents, type ExtractionInput } from "../lib/event-extractor";
+import { loadEmbeddingsFile, saveEmbeddingsFile, addEntry, contentHash, emptyIndex } from "../lib/embeddings-bin";
+import { embedTexts } from "../lib/embeddings";
+import type { EventRecord } from "../lib/types";
 
 export interface MaintainOptions {
   enrich?: boolean;
@@ -13,203 +14,162 @@ export interface MaintainResult {
   sessionsEnriched: number;
   featuresCreated: string[];
   decisionsCreated: string[];
-  crossLinksAdded: number;
   contextDriftWarnings: string[];
   message: string;
 }
 
 export async function runMaintain(
   cwd: string,
-  options: MaintainOptions
+  options: MaintainOptions,
 ): Promise<MaintainResult> {
   const found = await findConfig(cwd);
   if (!found) {
-    throw new Error(
-      "No .obsidian-memory.json found. Run `obsidian-memory init` first."
-    );
+    throw new Error("No .obsidian-memory config found. Run `obsidian-memory init` first.");
   }
 
-  const { vault, project, llm } = found.config;
-  const cli = new ObsidianCLI(vault);
+  const store = openStore(found.dir, found.config);
+  const project = found.config.project;
+  const llm = found.config.llm;
 
   const result: MaintainResult = {
     sessionsEnriched: 0,
     featuresCreated: [],
     decisionsCreated: [],
-    crossLinksAdded: 0,
     contextDriftWarnings: [],
     message: "",
   };
 
-  if (options.enrich) {
-    const sessionPaths = await findSessionsToEnrich(
-      cli,
-      project,
-      options.session
-    );
-
-    if (sessionPaths.length === 0) {
-      result.message = "No unenriched sessions found.";
-      return result;
-    }
-
-    const featureIndex = await safeRead(
-      cli,
-      `Memory/Projects/${project}/Docs/Features.md`
-    );
-    const decisionIndex = await safeRead(
-      cli,
-      `Memory/Projects/${project}/decisions.md`
-    );
-
-    for (const sessionPath of sessionPaths) {
-      try {
-        const sessionContent = await cli.read({ path: sessionPath });
-
-        const enrichment = await enrichSession(
-          sessionContent,
-          featureIndex,
-          decisionIndex,
-          llm
-        );
-
-        for (const feature of enrichment.features) {
-          try {
-            await runSaveFeature(cwd, {
-              slug: feature.slug,
-              title: feature.title,
-              summary: feature.summary,
-              status: feature.status,
-              categories: feature.categories,
-              keyFiles: feature.keyFiles.map((kf) => `${kf.path}:${kf.role}`),
-              sessions: [
-                sessionPath.split("/").pop()?.replace(".md", "") || "",
-              ],
-            });
-            result.featuresCreated.push(feature.slug);
-          } catch {
-            // Feature may already exist — skip
-          }
-        }
-
-        for (const decision of enrichment.decisions) {
-          try {
-            const { adrNumber } = await runSaveDecision(cwd, {
-              title: decision.title,
-              context: decision.context,
-              decision: decision.decision,
-              categories: decision.categories,
-              impacts: decision.impacts,
-              alternatives: decision.alternatives.map(
-                (a) => `${a.name}: ${a.proscons}`
-              ),
-              consequences: decision.consequences,
-            });
-            result.decisionsCreated.push(
-              `ADR-${String(adrNumber).padStart(3, "0")}`
-            );
-          } catch {
-            // Decision creation failed — skip
-          }
-        }
-
-        await updateSessionFrontmatter(cli, sessionPath, enrichment);
-        result.crossLinksAdded++;
-
-        if (enrichment.contextDrift) {
-          result.contextDriftWarnings.push(enrichment.contextDrift);
-        }
-
-        result.sessionsEnriched++;
-      } catch (err) {
-        console.error(`Failed to enrich ${sessionPath}: ${err}`);
-      }
-    }
-
-    result.message = formatMaintainResult(result);
+  if (!options.enrich) {
+    store.close();
+    result.message = "No maintenance action specified. Use --enrich.";
+    return result;
   }
 
-  return result;
-}
-
-async function findSessionsToEnrich(
-  cli: ObsidianCLI,
-  project: string,
-  specificSession?: string
-): Promise<string[]> {
-  if (specificSession) {
-    const content = await cli.read({ path: specificSession });
-    if (content.includes("enriched: true")) return [];
-    return [specificSession];
+  // Find unenriched sessions
+  let sessions;
+  if (options.session) {
+    const s = store.getSession(options.session);
+    sessions = s && !s.enriched ? [s] : [];
+  } else {
+    sessions = store.listSessions({ archived: false }).filter((s) => !s.enriched);
   }
 
-  const results = await cli.search(project, {
-    path: `Memory/Sessions/${project}/`,
-    limit: 10,
-  });
+  if (sessions.length === 0) {
+    store.close();
+    result.message = "No unenriched sessions found.";
+    return result;
+  }
 
-  const unenriched: string[] = [];
-  for (const result of results) {
+  const apiKeyEnv = llm?.apiKeyEnv ?? "GEMINI_API_KEY";
+  const apiKey = process.env[apiKeyEnv];
+  if (!apiKey) {
+    store.close();
+    result.message = `LLM key (${apiKeyEnv}) not set. Cannot enrich sessions.`;
+    return result;
+  }
+
+  // Load feature/decision indexes for enrichment context
+  const features = store.listFeatures();
+  const decisions = store.listDecisions();
+  const featureIndex = features.map((f) => `- ${f.slug}: ${f.title}`).join("\n") || "_No features yet._";
+  const decisionIndex = decisions.map((d) => `- ADR-${String(d.adrNumber).padStart(3, "0")}: ${d.title}`).join("\n") || "_No decisions yet._";
+
+  // Process up to 3 sessions per run
+  for (const session of sessions.slice(0, 3)) {
     try {
-      const content = await cli.read({ path: result.path });
-      if (!content.includes("enriched: true")) {
-        unenriched.push(result.path);
+      // 1. Enrich session (extract features/decisions/cross-links)
+      const enrichment = await enrichSession(session.content, featureIndex, decisionIndex, llm);
+
+      // 2. Create extracted features
+      for (const feature of enrichment.features) {
+        try {
+          store.insertFeature({
+            project,
+            slug: feature.slug,
+            title: feature.title,
+            summary: feature.summary,
+            status: feature.status,
+            categories: feature.categories,
+            keyFiles: feature.keyFiles,
+          });
+          result.featuresCreated.push(feature.slug);
+        } catch { /* may already exist */ }
       }
-    } catch {
-      // Skip unreadable sessions
+
+      // 3. Create extracted decisions
+      for (const decision of enrichment.decisions) {
+        try {
+          const { id } = store.insertDecision({
+            project,
+            title: decision.title,
+            context: decision.context,
+            decision: decision.decision,
+            categories: decision.categories,
+            impacts: decision.impacts,
+            alternatives: decision.alternatives,
+            consequences: decision.consequences,
+          });
+          result.decisionsCreated.push(id);
+        } catch { /* may already exist */ }
+      }
+
+      // 4. Extract events if not already enriched
+      try {
+        const input: ExtractionInput = {
+          date: session.date,
+          summary: session.summary,
+          files: session.files,
+          decisions: session.decisions,
+          sessionPath: session.id,
+        };
+        const events = await extractEvents(input, llm);
+        if (events.length > 0) {
+          store.transaction(() => {
+            store.deleteBaseEvents(session.id);
+            for (const event of events) {
+              const record: EventRecord = {
+                project,
+                sessionId: session.id,
+                date: session.date,
+                subject: event.subject,
+                action: event.action,
+                object: event.object,
+                aliases: event.aliases.join(" "),
+                files: event.files.join(" "),
+                isBase: false,
+              };
+              store.insertEvent(record);
+            }
+          });
+        }
+      } catch { /* event extraction is best-effort */ }
+
+      // 5. Generate embedding
+      try {
+        const embPath = getEmbeddingsPath(found.dir);
+        let index = await loadEmbeddingsFile(embPath) ?? emptyIndex();
+        const [embedding] = await embedTexts([session.content], apiKey);
+        if (embedding?.length > 0) {
+          index = addEntry(index, session.id, contentHash(session.content), new Float32Array(embedding));
+          await saveEmbeddingsFile(embPath, index);
+        }
+      } catch { /* embedding is best-effort */ }
+
+      // 6. Track context drift
+      if (enrichment.contextDrift) {
+        result.contextDriftWarnings.push(enrichment.contextDrift);
+      }
+
+      store.markEnriched(session.id);
+      result.sessionsEnriched++;
+    } catch (err) {
+      console.error(`Failed to enrich ${session.id}: ${err}`);
     }
   }
 
-  return unenriched.slice(0, 1);
-}
-
-async function updateSessionFrontmatter(
-  cli: ObsidianCLI,
-  sessionPath: string,
-  enrichment: EnrichmentResult
-): Promise<void> {
-  const content = await cli.read({ path: sessionPath });
-
-  const additions: string[] = [];
-  additions.push("enriched: true");
-
-  if (enrichment.crossLinks.features_touched.length > 0) {
-    additions.push("features_touched:");
-    for (const f of enrichment.crossLinks.features_touched) {
-      additions.push(`  - ${f}`);
-    }
-  }
-  if (enrichment.crossLinks.decisions_made.length > 0) {
-    additions.push("decisions_made:");
-    for (const d of enrichment.crossLinks.decisions_made) {
-      additions.push(`  - ${d}`);
-    }
-  }
-  if (enrichment.crossLinks.topics.length > 0) {
-    additions.push("topics:");
-    for (const t of enrichment.crossLinks.topics) {
-      additions.push(`  - ${t}`);
-    }
-  }
-
-  const updated = content.replace(
-    /^(---\n[\s\S]*?)(---)/m,
-    `$1${additions.join("\n")}\n$2`
-  );
-
-  await cli.create({
-    name: sessionPath,
-    content: updated,
-    overwrite: true,
-  });
-}
-
-async function safeRead(cli: ObsidianCLI, path: string): Promise<string> {
-  try {
-    return await cli.read({ path });
-  } catch {
-    return "";
-  }
+  store.close();
+  result.message = formatMaintainResult(result);
+  return result;
 }
 
 function formatMaintainResult(result: MaintainResult): string {
@@ -220,9 +180,6 @@ function formatMaintainResult(result: MaintainResult): string {
   }
   if (result.decisionsCreated.length > 0) {
     lines.push(`  Decisions created: ${result.decisionsCreated.join(", ")}`);
-  }
-  if (result.crossLinksAdded > 0) {
-    lines.push(`  Cross-links added to ${result.crossLinksAdded} session(s).`);
   }
   if (result.contextDriftWarnings.length > 0) {
     lines.push(`\nContext drift detected:`);

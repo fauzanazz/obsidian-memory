@@ -1,4 +1,5 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
+import { join } from "path";
+import { mkdir } from "fs/promises";
 import { findConfig } from "../lib/config";
 import { scanProject } from "../lib/scanner";
 import { detectProject } from "../lib/project-detector";
@@ -18,6 +19,7 @@ export interface DocumentResult {
   created: string[];
   updated: string[];
   project: string;
+  docsDir: string;
 }
 
 const DOC_NOTES = [
@@ -29,17 +31,14 @@ const DOC_NOTES = [
 
 export async function runDocument(
   cwd: string,
-  options?: DocumentOptions
+  options?: DocumentOptions,
 ): Promise<DocumentResult> {
   const found = await findConfig(cwd);
   if (!found) {
-    throw new Error(
-      "No .obsidian-memory.json found. Run `obsidian-memory init` first."
-    );
+    throw new Error("No .obsidian-memory config found. Run `obsidian-memory init` first.");
   }
 
-  const { vault, project } = found.config;
-  const cli = new ObsidianCLI(vault);
+  const { project } = found.config;
   const projectDir = found.dir;
 
   // Scan project
@@ -54,56 +53,33 @@ export async function runDocument(
     Conventions: generateConventions(project),
   };
 
+  // Write to .obsidian-memory/docs/
+  const docsDir = join(projectDir, ".obsidian-memory", "docs");
+  await mkdir(docsDir, { recursive: true });
+
   const result: DocumentResult = {
     created: [],
     updated: [],
     project,
+    docsDir,
   };
 
-  const docsPath = `Memory/Projects/${project}/Docs`;
-
   for (const { name } of DOC_NOTES) {
-    const notePath = `${docsPath}/${name}.md`;
+    const filePath = join(docsDir, `${name}.md`);
     const newContent = docs[name];
+    const file = Bun.file(filePath);
 
-    if (options?.force) {
-      // Force: always overwrite
-      try {
-        await cli.create({
-          name: notePath,
-          content: newContent,
-          overwrite: true,
-        });
-      } catch {
-        // Try creating if overwrite fails (note might not exist)
-        await cli.create({ name: notePath, content: newContent });
-      }
+    if (options?.force || !(await file.exists())) {
+      await Bun.write(filePath, newContent);
       result.created.push(name);
       continue;
     }
 
-    // Try to read existing content for merge
-    let existingContent = "";
-    try {
-      existingContent = await cli.read({ path: notePath });
-    } catch {
-      // Note doesn't exist yet
-    }
-
-    if (existingContent) {
-      // Merge: update auto sections, preserve agent content
-      const merged = mergeWithExisting(newContent, existingContent);
-      await cli.create({
-        name: notePath,
-        content: merged,
-        overwrite: true,
-      });
-      result.updated.push(name);
-    } else {
-      // Create new
-      await cli.create({ name: notePath, content: newContent });
-      result.created.push(name);
-    }
+    // Merge with existing content
+    const existingContent = await file.text();
+    const merged = mergeWithExisting(newContent, existingContent);
+    await Bun.write(filePath, merged);
+    result.updated.push(name);
   }
 
   return result;
@@ -120,12 +96,7 @@ export function formatDocumentResult(result: DocumentResult): string {
     lines.push(`  Updated: ${result.updated.join(", ")}`);
   }
 
-  lines.push(
-    `\nDocs are in Memory/Projects/${result.project}/Docs/`
-  );
-  lines.push(
-    "Agents will consult these docs before creating or debugging."
-  );
+  lines.push(`\nDocs written to ${result.docsDir}/`);
 
   return lines.join("\n");
 }
