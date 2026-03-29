@@ -18,9 +18,8 @@ export interface LLMConfig {
 export interface MemoryConfig {
   project: string;
   agents: string[];
-  /** Optional: only needed for `sync` command (Obsidian export) */
-  vault?: string;
-  /** Optional: filesystem path to Obsidian vault for `sync` */
+  /** Required during migration; becomes optional after Obsidian deps are removed */
+  vault: string;
   vaultPath?: string;
   llm?: LLMConfig;
 }

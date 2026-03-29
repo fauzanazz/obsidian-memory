@@ -1,7 +1,9 @@
-import { ObsidianCLI, type SearchResult } from "../lib/obsidian-cli";
-import { findConfig } from "../lib/config";
-import { existsSync } from "fs";
-import { createSearchProvider, type HybridSearchResult } from "../lib/search";
+import { findConfig, openStore, getEmbeddingsPath } from "../lib/config";
+import { expandQuery } from "../lib/query-expander";
+import { hybridSearch } from "../lib/retrieval";
+import { loadEmbeddingsFile } from "../lib/embeddings-bin";
+import { embedQuery } from "../lib/embeddings";
+import type { RankedResult } from "../lib/types";
 
 export interface SearchCommandOptions {
   path?: string;
@@ -12,32 +14,46 @@ export async function runSearch(
   cwd: string,
   query: string,
   options?: SearchCommandOptions,
-): Promise<{ results: SearchResult[]; provider: string }> {
+): Promise<{ results: RankedResult[]; provider: string }> {
   const found = await findConfig(cwd);
   if (!found) {
     throw new Error(
-      "No .obsidian-memory.json found. Run `obsidian-memory init` first.",
+      "No .obsidian-memory config found. Run `obsidian-memory init` first.",
     );
   }
 
-  const { vault } = found.config;
-  const cli = new ObsidianCLI(vault);
+  const store = openStore(found.dir, found.config);
+  const apiKey = process.env.GEMINI_API_KEY;
 
-  // Resolve vault filesystem path for hybrid search
-  const resolvedPath = resolveVaultPath(found.config);
+  // Expand query (LLM-powered if API key available)
+  const expanded = await expandQuery(query, apiKey);
 
-  const provider = await createSearchProvider(cli, resolvedPath ?? undefined);
+  // Load embeddings + embed query if available
+  const embPath = getEmbeddingsPath(found.dir);
+  const embIndex = await loadEmbeddingsFile(embPath);
+  let queryVector: Float32Array | null = null;
+  if (apiKey && embIndex) {
+    try {
+      const vec = await embedQuery(query, apiKey);
+      if (vec.length > 0) queryVector = new Float32Array(vec);
+    } catch {
+      // Vector search unavailable — keyword only
+    }
+  }
 
-  const results = await provider.search(query, {
-    path: options?.path || "Memory/",
+  const results = hybridSearch(store, expanded, embIndex, queryVector, {
     limit: options?.limit,
+    target: "all",
   });
 
-  return { results, provider: provider.name };
+  const provider = queryVector ? "hybrid (keyword + vector)" : "keyword (FTS5)";
+
+  store.close();
+  return { results, provider };
 }
 
 export function formatSearchResults(
-  results: SearchResult[],
+  results: RankedResult[],
   provider: string,
 ): string {
   if (results.length === 0) {
@@ -48,36 +64,19 @@ export function formatSearchResults(
   lines.push(`Found ${results.length} result(s) via ${provider}:\n`);
 
   for (const result of results) {
-    const hybrid = result as HybridSearchResult;
-    const sourceTag = hybrid.sources
-      ? ` [${hybrid.sources.join("+")}]`
-      : "";
-    lines.push(`  ${result.path}${sourceTag}`);
-    if (result.matches?.length) {
-      for (const match of result.matches.slice(0, 2)) {
-        lines.push(`    > ${match}`);
+    const sourceTag = ` [${result.sources.join("+")}]`;
+    if (result.type === "session") {
+      lines.push(`  ${result.id}${sourceTag}`);
+      if (result.summary) {
+        lines.push(`    > ${result.summary.slice(0, 120)}`);
+      }
+    } else {
+      lines.push(`  ${result.subject} ${result.action} ${result.object}${sourceTag}`);
+      if (result.date) {
+        lines.push(`    > ${result.date}`);
       }
     }
   }
 
   return lines.join("\n");
-}
-
-function resolveVaultPath(config: {
-  vault: string;
-  vaultPath?: string;
-}): string | null {
-  if (config.vaultPath) {
-    return config.vaultPath.replace(/^~/, process.env.HOME || "~");
-  }
-  const home = process.env.HOME || "~";
-  const candidates = [
-    `${home}/Documents/${config.vault}`,
-    `${home}/${config.vault}`,
-    `${home}/Obsidian/${config.vault}`,
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate + "/Memory")) return candidate;
-  }
-  return null;
 }

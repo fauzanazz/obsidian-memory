@@ -16,6 +16,7 @@ import { detectAgents, runInit, formatInitResult, type AgentId } from "./command
 import { runCreateNote } from "./commands/create-note";
 import { runTimeline } from "./commands/timeline";
 import { runQuery } from "./commands/query";
+import { runGet } from "./commands/get";
 
 function parsePositiveInt(value: string): number | undefined {
   const n = parseInt(value, 10);
@@ -26,7 +27,7 @@ const program = new Command();
 
 program
   .name("obsidian-memory")
-  .description("Universal memory layer for AI coding agents, powered by Obsidian")
+  .description("Universal memory layer for AI coding agents")
   .version("0.1.0");
 
 program
@@ -394,6 +395,19 @@ program
         until: opts.until,
         limit: opts.limit ? parsePositiveInt(opts.limit) : undefined,
       });
+      console.log(output);
+    } catch (e: any) {
+      console.error(`Error: ${e.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command("get <session-id>")
+  .description("Retrieve full session content by ID")
+  .action(async (sessionId: string) => {
+    try {
+      const output = await runGet(process.cwd(), sessionId);
       console.log(output);
     } catch (e: any) {
       console.error(`Error: ${e.message}`);

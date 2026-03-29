@@ -1,8 +1,8 @@
-import { ObsidianCLI } from "../lib/obsidian-cli";
-import { findConfig, resolveVaultPath } from "../lib/config";
-import { readEvents, searchEvents, formatEventTimeline } from "../lib/event-extractor";
-import { vectorSearch, reciprocalRankFusion } from "../lib/embeddings";
-import { extractSection } from "./load-context";
+import { findConfig, openStore, getEmbeddingsPath } from "../lib/config";
+import { expandQuery } from "../lib/query-expander";
+import { loadEmbeddingsFile } from "../lib/embeddings-bin";
+import { embedQuery } from "../lib/embeddings";
+import { hybridSearch } from "../lib/retrieval";
 
 export interface QueryOptions {
   since?: string;
@@ -17,98 +17,85 @@ export async function runQuery(
 ): Promise<string> {
   const found = await findConfig(cwd);
   if (!found) {
-    throw new Error("No .obsidian-memory.json found. Run `obsidian-memory init` first.");
+    throw new Error("No .obsidian-memory config found. Run `obsidian-memory init` first.");
   }
 
-  const { vault, project } = found.config;
-  const cli = new ObsidianCLI(vault);
-  const vaultPath = resolveVaultPath(found.config);
-
-  if (!vaultPath) {
-    throw new Error("Could not resolve vault filesystem path. Set vaultPath in .obsidian-memory.json.");
-  }
+  const store = openStore(found.dir, found.config);
+  const apiKey = process.env.GEMINI_API_KEY;
 
   const sections: string[] = [];
   sections.push(`# Query: "${queryText}"`);
 
-  // 1. Search events
-  const allEvents = await readEvents(vaultPath, project, {
-    since: options.since,
-    until: options.until,
-  });
-  const matchedEvents = searchEvents(allEvents, queryText);
-  const limitedEvents = matchedEvents.slice(0, options.limit ?? 10);
+  // 1. Search events via FTS5
+  const expanded = await expandQuery(queryText, apiKey);
+  if (options.since) expanded.timeframe = { ...expanded.timeframe, since: options.since };
+  if (options.until) expanded.timeframe = { ...expanded.timeframe, until: options.until };
 
-  if (limitedEvents.length > 0) {
-    sections.push(`## Matching Events (${limitedEvents.length})\n\n${formatEventTimeline(limitedEvents)}`);
+  const matchedEvents = store.searchEventsFTS(
+    expanded.terms.join(" OR "),
+    expanded.timeframe,
+    options.limit ?? 10,
+  );
+
+  if (matchedEvents.length > 0) {
+    const eventLines: string[] = [];
+    const byDate = new Map<string, typeof matchedEvents>();
+    for (const event of matchedEvents) {
+      const group = byDate.get(event.date) ?? [];
+      group.push(event);
+      byDate.set(event.date, group);
+    }
+
+    for (const date of Array.from(byDate.keys()).sort().reverse()) {
+      eventLines.push(`## ${date}`);
+      for (const event of byDate.get(date)!) {
+        const filesStr = event.files ? ` (${event.files.split(" ").map((f: string) => "`" + f + "`").join(", ")})` : "";
+        eventLines.push(`- **${event.subject}** ${event.action} ${event.object}${filesStr}`);
+      }
+      eventLines.push("");
+    }
+
+    sections.push(`## Matching Events (${matchedEvents.length})\n\n${eventLines.join("\n")}`);
   } else {
     sections.push("## Events\n\nNo matching events found.");
   }
 
-  // 2. Find related sessions (via event sources + hybrid search)
-  const sessionPaths = new Set<string>();
-
-  // Sessions from matching events
-  for (const event of limitedEvents) {
-    if (event.source) sessionPaths.add(event.source);
+  // 2. Find related sessions via hybrid search
+  const embPath = getEmbeddingsPath(found.dir);
+  const embIndex = await loadEmbeddingsFile(embPath);
+  let queryVector: Float32Array | null = null;
+  if (apiKey && embIndex) {
+    try {
+      const vec = await embedQuery(queryText, apiKey);
+      if (vec.length > 0) queryVector = new Float32Array(vec);
+    } catch { /* keyword only */ }
   }
 
-  // Hybrid search for additional sessions
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (apiKey) {
-    try {
-      const vectorResults = await vectorSearch(vaultPath, queryText, apiKey, 5);
-      const keywordResults = await cli.search(queryText, {
-        path: `Memory/Sessions/${project}/`,
-        limit: 5,
-      });
-      const fused = reciprocalRankFusion(
-        keywordResults.map((r) => r.path),
-        vectorResults.filter((r) => r.path.includes(`Sessions/${project}/`)),
-      );
-      for (const result of fused.slice(0, 3)) {
-        sessionPaths.add(result.path);
-      }
-    } catch {
-      // Vector or fusion failed — fall back to keyword-only
-      try {
-        const results = await cli.search(queryText, {
-          path: `Memory/Sessions/${project}/`,
-          limit: 5,
-        });
-        for (const r of results) sessionPaths.add(r.path);
-      } catch {}
-    }
-  } else {
-    // Keyword-only fallback
-    try {
-      const results = await cli.search(queryText, {
-        path: `Memory/Sessions/${project}/`,
-        limit: 5,
-      });
-      for (const r of results) sessionPaths.add(r.path);
-    } catch {
-      // optional
+  const sessionResults = hybridSearch(store, expanded, embIndex, queryVector, {
+    limit: 5,
+    target: "sessions",
+  });
+
+  // Also include sessions referenced by matched events
+  const sessionIds = new Set(sessionResults.map((r) => r.id));
+  for (const event of matchedEvents.slice(0, 5)) {
+    if (event.sessionId && !sessionIds.has(event.sessionId)) {
+      sessionIds.add(event.sessionId);
     }
   }
 
   // 3. Load session summaries
-  if (sessionPaths.size > 0) {
-    const sessionLines: string[] = [];
-    for (const path of Array.from(sessionPaths).slice(0, 5)) {
-      try {
-        const content = await cli.read({ path });
-        const summary = extractSection(content, "Summary");
-        const filename = path.split("/").pop() || "";
-        sessionLines.push(`- **${filename}**: ${summary?.trim() || "No summary"}`);
-      } catch {
-        // Skip unreadable sessions
-      }
-    }
-    if (sessionLines.length > 0) {
-      sections.push(`## Related Sessions\n\n${sessionLines.join("\n")}`);
-    }
+  const sessionLines: string[] = [];
+  for (const id of sessionIds) {
+    const session = store.getSession(id);
+    if (!session) continue;
+    sessionLines.push(`- **${session.id}** (${session.date}): ${session.summary.slice(0, 120)}`);
   }
 
+  if (sessionLines.length > 0) {
+    sections.push(`## Related Sessions\n\n${sessionLines.join("\n")}`);
+  }
+
+  store.close();
   return sections.join("\n\n");
 }
